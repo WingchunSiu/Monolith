@@ -1,36 +1,160 @@
-# Recursive Language Models (minimal version) 
 
-[Link to the official RLM codebase](https://github.com/alexzhang13/rlm)
+---
 
-[Link to the paper](https://arxiv.org/abs/2512.24601v1)
+<h1 align="center" style="font-size:2.8em">
+<span>Recursive Language Models (<span style="color:orange">RLM</span>s)</span>
+</h1>
 
-[Link to the original blogpost 📝](https://alexzhang13.github.io/blog/2025/rlm/)
+<p align="center" style="font-size:1.3em">
+  <a href="https://arxiv.org/abs/2512.24601">Full Paper</a> •
+  <a href="https://alexzhang13.github.io/blog/2025/rlm/">Blogpost</a> •
+  <a href="https://alexzhang13.github.io/rlm/">Documentation</a> •
+  <a href="https://github.com/alexzhang13/rlm-minimal">RLM Minimal</a>
+</p>
 
-I received a lot of requests to put out a notebook or gist version of the codebase I've been using. Sadly it's a bit entangled with a bunch of random state, cost, and code execution tracking logic that I want to clean up while I run other experiments. In the meantime, I've re-written a simpler version of what I'm using so people can get started building on top and writing their own RLM implementations. Happy hacking!
+<p align="center">
+  <a href="https://github.com/alexzhang13/rlm/actions/workflows/style.yml">
+    <img src="https://github.com/alexzhang13/rlm/actions/workflows/style.yml/badge.svg" alt="Style" />
+  </a>
+  <a href="https://github.com/alexzhang13/rlm/actions/workflows/test.yml">
+    <img src="https://github.com/alexzhang13/rlm/actions/workflows/test.yml/badge.svg" alt="Test" />
+  </a>
+</p>
 
-![teaser](media/rlm.png)
+<p align="center">
+  <a href="https://arxiv.org/abs/2512.24601">
+    <img src="media/paper_preview.png" alt="Paper Preview" width="300"/>
+  </a>
+</p>
 
-I've provided a basic, minimal implementation of a recursive language model (RLM) with a REPL environment for OpenAI clients. Like the blogpost, we only implement recursive sub-calls with `depth=1` inside the RLM environment. Enabling further depths is as simple as replacing the `Sub_RLM` class with the `RLM_REPL` class, but you may need to finagle the `exec`-based REPL environments to work better here (because now your sub-RLMs have their own REPL environments!).
+## Overview
+Recursive Language Models (RLMs) are a task-agnostic inference paradigm for language models (LMs) to handle near-infinite length contexts by enabling the LM to *programmatically* examine, decompose, and recursively call itself over its input. RLMs replace the canonical `llm.completion(prompt, model)` call with a `rlm.completion(prompt, model)` call. RLMs offload the context as a variable in a REPL environment that the LM can interact with and launch sub-LM calls inside of.
 
-In this stripped implementation, we exclude a lot of the logging, cost tracking, prompting, and REPL execution details of the experiments run in the blogpost. It's relatively easy to modify and build on top of this code to reproduce those results, but it's currently harder to go from my full codebase to supporting any new functionality.
+This repository provides an extensible inference engine for using RLMs around standard API-based and local LLMs. The initial experiments and idea were proposed in a [blogpost](https://alexzhang13.github.io/blog/2025/rlm/) in 2025, with expanded results in an [arXiv preprint](https://arxiv.org/abs/2512.24601).
 
-## Basic Example
-We have all the basic dependencies in `requirements.txt`, although none are really necessary if you change your implementation (`openai` for LM API calls, `dotenv` for .env loading, and `rich` for logging).
+> [!NOTE]
+> This repository contains inference code for RLMs with support for various sandbox environments. Open-source contributions are welcome. This repository is maintained by the authors of the paper from the MIT OASYS lab.
 
-In `main.py`, we have a basic needle-in-the-haystack (NIAH) example that embeds a random number inside ~1M lines of random words, and asks the model to go find it. It's a silly Hello World type example to emphasize that `RLM.completion()` calls are meant to replace `LM.completion()` calls.
-
-## Code Structure
-In the `rlm/` folder, the two main files are `rlm_repl.py` and `repl.py`. 
-* `rlm_repl.py` offers a basic implementation of an RLM using a REPL environment in the `RLM_REPL` class. The `completion()` function gets called when we query an RLM.
-* `repl.py` is a simple `exec`-based implementation of a REPL environment that adds an LM sub-call function. To make the system truly recursive beyond `depth=1`, you can replace the `Sub_RLM` class with `RLM_REPL` (they all inherit from the `RLM` base class).
-
-The functionality for parsing and handling base LLM clients are all in `rlm/utils/`. We also add example prompts here.
-
-> The `rlm/logger/` folder mainly contains optional logging utilities used by the RLM REPL implementation. If you want to enable colorful or enhanced logging outputs, you may need to install the [`rich`](https://github.com/Textualize/rich) library as a dependency.
+## Quick Setup
+You can try out RLMs quickly by installing from PyPi:
+```bash
+pip install rlms
 ```
-pip install rich
+
+The default RLM client uses a REPL environment that runs on the host process through Python `exec` calls. It uses the same virtual environment as the host process (i.e. it will have access to the same dependencies), but with some limitations in its available global modules. As an example, we can call RLM completions using GPT-5-nano:
+```python
+from rlm import RLM
+
+rlm = RLM(
+    backend="openai",
+    backend_kwargs={"model_name": "gpt-5-nano"},
+    verbose=True,  # For printing to console with rich, disabled by default.
+)
+
+print(rlm.completion("Print me the first 100 powers of two, each on a newline.").response)
 ```
 
-When you run your code, you'll see something like this:
+<details>
+<summary><b>Manual Setup</b></summary>
 
-![Example logging output using `rich`](media/rich.png)
+Set up the dependencies with `uv` (or your virtual environment of choice):
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv init && uv venv --python 3.12  # change version as needed
+uv pip install -e .
+```
+
+This project includes a `Makefile` to simplify common tasks.
+
+- `make install`: Install base dependencies.
+- `make check`: Run linter, formatter, and tests.
+
+To run a quick test, the following will run an RLM query with the OpenAI client using your environment variable `OPENAI_API_KEY` (feel free to change this). This will generate console output as well as a log which you can use with the visualizer to explore the trajectories.
+```bash
+make quickstart
+```
+
+</details>
+
+## REPL Environments
+We support two types of REPL environments -- isolated, and non-isolated. Non-isolated environments (default) run code execution on the same machine as the RLM (e.g. through `exec`), which is pretty reasonable for some local low-risk tasks, like simple benchmarking, but can be problematic if the prompts or tool calls can interact with malicious users. Fully isolated environments used Cloud-based sandboxes (e.g. Prime Sandboxes, [Modal Sandboxes](https://modal.com/docs/guide/sandboxes)) to run code generated by the RLM, ensuring completely isolation from the host process. Environments can be added, but we natively support the following: `local` (default), `modal`, `prime`.
+
+```python
+rlm = RLM(
+    environment="...", # "local", "docker", "modal", "prime"
+    environment_kwargs={...},
+)
+```
+
+### Local Environments
+The default `local` environment `LocalREPL` runs in the same process as the RLM itself, with specified global and local namespaces for minimal security. Using this REPL is generally safe, but should not be used for production settings. It also shares the same virtual environment (e.g. Conda or uv) as the host process.
+
+#### Docker <img src="https://github.com/docker.png" alt="Docker" height="20" style="vertical-align: middle;"/> (*requires [Docker installed](https://docs.docker.com/desktop/setup/install/)*)
+We also support a Docker-based environment called `DockerREPL` that launches the REPL environment as a Docker image. By default, we use the `python:3.11-slim` image, but the user can specify custom images as well.
+
+### Isolated Environments
+We support several different REPL environments that run on separate, cloud-based machines. Whenever a recursive sub-call is made in these instances, it is requested from the host process.
+
+#### Modal Sandboxes <img src="https://github.com/modal-labs.png" alt="Modal" height="20" style="vertical-align: middle;"/>
+To use [Modal Sandboxes](https://modal.com/docs/guide/sandboxes) as the REPL environment, you need to install and authenticate your Modal account.
+```bash
+uv add modal  # add modal library
+modal setup   # authenticate account
+```
+
+#### Prime Intellect Sandboxes <img src="https://github.com/PrimeIntellect-ai.png" alt="Prime Intellect" height="20" style="vertical-align: middle;"/>
+> [!NOTE]
+> **Prime Intellect Sandboxes** are currently a beta feature. See the [documentation](https://docs.primeintellect.ai/sandboxes/overview) for more information. We noticed slow runtimes when using these sandboxes, which is currently an open issue.
+
+
+To use [Prime Sandboxes](https://docs.primeintellect.ai/sandboxes/sdk), install the SDK and set your API key:
+```bash
+uv pip install -e ".[prime]"
+export PRIME_API_KEY=...
+```
+
+
+### Model Providers
+We currently support most major clients (OpenAI, Anthropic), as well as the router platforms (OpenRouter, Portkey, LiteLLM). For local models, we recommend using vLLM (which interfaces with the [OpenAI client](https://github.com/alexzhang13/rlm/blob/main/rlm/clients/openai.py)). To view or add support for more clients, start by looking at [`rlm/clients/`](https://github.com/alexzhang13/rlm/tree/main/rlm/clients).
+
+## Relevant Reading
+* **[Dec '25]** [Recursive Language Models arXiv](https://arxiv.org/abs/2512.24601)
+* **[Oct '25]** [Recursive Language Models Blogpost](https://alexzhang13.github.io/blog/2025/rlm/)
+
+If you use this code or repository in your research, please cite:
+
+```bibtex
+@misc{zhang2025recursivelanguagemodels,
+      title={Recursive Language Models}, 
+      author={Alex L. Zhang and Tim Kraska and Omar Khattab},
+      year={2025},
+      eprint={2512.24601},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2512.24601}, 
+}
+```
+
+## Optional Debugging: Visualizing RLM Trajectories
+We additionally provide a simple visualizer tool to examine and view the code, sub-LM, and root-LM calls of an RLM trajectory. To save log files (`.jsonl`) on every completion call that can be viewed in the visualizer, initialize the `RLMLogger` object and pass it into the `RLM` on initialization:
+```python
+from rlm.logger import RLMLogger
+from rlm import RLM
+
+logger = RLMLogger(log_dir="./logs")
+rlm = RLM(
+    ...
+    logger=logger
+)
+```
+
+To run the visualizer locally, we use Node.js and shadcn/ui:
+```
+cd visualizer/
+npm run dev        # default localhost:3001
+```
+
+You'll have the option to select saved `.jsonl` files 
+<p align="center">
+  <img src="media/visualizer.png" alt="RLM Visualizer Example" width="800"/>
+</p>
