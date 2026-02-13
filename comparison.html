@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RLM vs RLM-Minimal: Deep Comparison</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #bc8cff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --pink: #f778ba;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem;
+  }
+  h1 {
+    text-align: center;
+    font-size: 2.2rem;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .subtitle {
+    text-align: center;
+    color: var(--text-muted);
+    margin-bottom: 2.5rem;
+    font-size: 1.05rem;
+  }
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 2.5rem;
+    max-width: 700px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .toc h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--accent); }
+  .toc ol { padding-left: 1.5rem; }
+  .toc li { margin-bottom: 0.35rem; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  section { margin-bottom: 3rem; }
+  h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--border);
+    color: var(--accent);
+  }
+  h3 { font-size: 1.15rem; margin: 1.2rem 0 0.6rem; color: var(--accent2); }
+
+  /* Comparison table */
+  .cmp-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.5rem;
+    font-size: 0.93rem;
+  }
+  .cmp-table th, .cmp-table td {
+    padding: 0.7rem 1rem;
+    border: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+  }
+  .cmp-table th {
+    background: var(--surface2);
+    color: var(--accent);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .cmp-table th:first-child { width: 25%; }
+  .cmp-table td:nth-child(2) { background: rgba(63,185,80,0.04); }
+  .cmp-table td:nth-child(3) { background: rgba(188,140,255,0.04); }
+  .cmp-table tr:hover td { background: var(--surface); }
+
+  .tag {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin: 0.1rem;
+  }
+  .tag-green { background: rgba(63,185,80,0.15); color: var(--green); }
+  .tag-orange { background: rgba(210,153,34,0.15); color: var(--orange); }
+  .tag-red { background: rgba(248,81,73,0.15); color: var(--red); }
+  .tag-blue { background: rgba(88,166,255,0.15); color: var(--accent); }
+  .tag-purple { background: rgba(188,140,255,0.15); color: var(--accent2); }
+  .tag-pink { background: rgba(247,120,186,0.15); color: var(--pink); }
+
+  /* Code block */
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    overflow-x: auto;
+    font-size: 0.87rem;
+    line-height: 1.5;
+    margin: 0.75rem 0;
+  }
+  code { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; }
+  .kw { color: var(--pink); }
+  .str { color: var(--green); }
+  .cmt { color: var(--text-muted); }
+  .fn { color: var(--accent); }
+
+  /* Flow diagram */
+  .flow {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text-muted);
+  }
+
+  /* Side-by-side boxes */
+  .side-by-side {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin: 1rem 0;
+  }
+  .box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.2rem;
+  }
+  .box h4 {
+    font-size: 1rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .box-minimal h4 { color: var(--green); }
+  .box-full h4 { color: var(--accent2); }
+  .box ul { padding-left: 1.2rem; }
+  .box li { margin-bottom: 0.3rem; font-size: 0.9rem; }
+
+  /* Key insight callout */
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: rgba(88,166,255,0.06);
+    padding: 1rem 1.2rem;
+    border-radius: 0 8px 8px 0;
+    margin: 1rem 0;
+    font-size: 0.93rem;
+  }
+  .callout-orange { border-left-color: var(--orange); background: rgba(210,153,34,0.06); }
+  .callout strong { color: var(--accent); }
+  .callout-orange strong { color: var(--orange); }
+
+  /* Pipeline diagram */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin: 1rem 0;
+  }
+  .pipeline-step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    font-size: 0.85rem;
+    text-align: center;
+    min-width: 120px;
+  }
+  .pipeline-arrow { color: var(--accent); font-size: 1.3rem; }
+
+  /* File tree */
+  .file-tree {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    padding: 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 0.5rem 0;
+  }
+  .file-tree .dir { color: var(--accent); }
+  .file-tree .file { color: var(--text-muted); }
+  .file-tree .highlight { color: var(--green); font-weight: bold; }
+
+  @media (max-width: 900px) {
+    .side-by-side { grid-template-columns: 1fr; }
+    body { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>RLM vs RLM-Minimal</h1>
+<p class="subtitle">A deep technical comparison of both Recursive Language Model implementations</p>
+
+<nav class="toc">
+  <h2>Table of Contents</h2>
+  <ol>
+    <li><a href="#tldr">TL;DR &mdash; What Is RLM?</a></li>
+    <li><a href="#architecture">Architecture Comparison</a></li>
+    <li><a href="#feature-matrix">Feature Matrix</a></li>
+    <li><a href="#execution-flow">Execution Flow (Side-by-Side)</a></li>
+    <li><a href="#code-diffs">Key Code Differences</a></li>
+    <li><a href="#repl-env">REPL Environment Comparison</a></li>
+    <li><a href="#prompts">System Prompts Comparison</a></li>
+    <li><a href="#backends">Backends &amp; Environments</a></li>
+    <li><a href="#file-structure">File Structure</a></li>
+    <li><a href="#quickstart">Getting Started with RLM-Minimal</a></li>
+    <li><a href="#dataset-pipeline">Dataset Curation Pipeline (RLAM Idea)</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================ -->
+<section id="tldr">
+<h2>1. TL;DR &mdash; What Is RLM?</h2>
+<p><strong>RLM (Recursive Language Models)</strong> is a framework that lets LLMs handle tasks beyond their context window by giving them a <strong>REPL (Read-Eval-Print Loop)</strong> environment. Instead of shoving a million-line document into one prompt, the LLM <em>writes Python code</em> to explore the data iteratively, calling sub-LLMs for semantic analysis of chunks.</p>
+
+<div class="callout">
+  <strong>Core idea:</strong> The root LLM generates code &rarr; code runs in a sandbox &rarr; results feed back to the LLM &rarr; repeat until <code>FINAL(answer)</code>. Sub-LLM calls from within the REPL enable recursive semantic processing.
+</div>
+
+<p>There are <strong>two implementations</strong> in this repo:</p>
+<ul style="margin: 0.5rem 0 0 1.5rem;">
+  <li><span class="tag tag-green">rlm-minimal</span> &mdash; ~600 lines, OpenAI-only, local REPL, single example. Perfect for learning and prototyping.</li>
+  <li><span class="tag tag-purple">rlm (full)</span> &mdash; ~3000+ lines, 9 backends, 6 environments, TCP socket protocol, logging, visualizer, persistent mode, pip-installable. Production-grade.</li>
+</ul>
+</section>
+
+<!-- ============================================ -->
+<section id="architecture">
+<h2>2. Architecture Comparison</h2>
+
+<div class="side-by-side">
+  <div class="box box-minimal">
+    <h4>RLM-Minimal</h4>
+    <div class="flow">User Code
+  |
+  v
+RLM_REPL.completion(context, query)
+  |
+  +-- OpenAIClient (direct API call)
+  |
+  +-- REPLEnv (in-process exec())
+  |     |
+  |     +-- context variable
+  |     +-- llm_query() --> Sub_RLM
+  |     +-- FINAL_VAR()
+  |
+  +-- Loop up to max_iterations
+  |     |
+  |     +-- LLM call (messages + prompt)
+  |     +-- Parse ```repl``` blocks
+  |     +-- exec() code in sandbox
+  |     +-- Check for FINAL()
+  |
+  v
+Return answer string</div>
+  </div>
+  <div class="box box-full">
+    <h4>RLM (Full)</h4>
+    <div class="flow">User Code
+  |
+  v
+RLM.completion(prompt, root_prompt)
+  |
+  +-- get_client() --> BaseLM subclass
+  |     (OpenAI/Anthropic/Gemini/Azure/...)
+  |
+  +-- LMHandler (TCP server on auto port)
+  |     +-- ThreadingLMServer
+  |     +-- Socket protocol (4-byte len + JSON)
+  |
+  +-- get_environment() --> BaseEnv subclass
+  |     (Local/Docker/Modal/Prime/E2B/Daytona)
+  |     |
+  |     +-- context, llm_query(), llm_query_batched()
+  |     +-- FINAL_VAR(), SHOW_VARS()
+  |
+  +-- Loop up to max_iterations (default 30)
+  |     |
+  |     +-- lm_handler.completion(prompt)
+  |     +-- find_code_blocks()
+  |     +-- environment.execute_code()
+  |     +-- find_final_answer()
+  |     +-- RLMLogger.log(iteration)
+  |
+  v
+Return RLMChatCompletion (answer + usage + timing)</div>
+  </div>
+</div>
+
+<div class="callout">
+  <strong>Key architectural difference:</strong> The full RLM decouples the LM client from the REPL environment via a <em>TCP socket server</em> (LMHandler). This allows the REPL to run in a completely separate process (Docker), machine (Modal/Prime), or cloud sandbox, while still making LLM calls back to the host. The minimal version just calls the OpenAI API directly from the same Python process.
+</div>
+</section>
+
+<!-- ============================================ -->
+<section id="feature-matrix">
+<h2>3. Feature Matrix</h2>
+<table class="cmp-table">
+  <thead>
+    <tr>
+      <th>Feature</th>
+      <th><span class="tag tag-green">rlm-minimal</span></th>
+      <th><span class="tag tag-purple">rlm (full)</span></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>LLM Backends</td>
+      <td>OpenAI only</td>
+      <td>9 backends: OpenAI, Anthropic, Gemini, Azure, Portkey, OpenRouter, vLLM, LiteLLM, Vercel</td>
+    </tr>
+    <tr>
+      <td>Execution Environments</td>
+      <td>Local (in-process <code>exec()</code>)</td>
+      <td>6 environments: Local, Docker, Modal, Prime Intellect, E2B, Daytona</td>
+    </tr>
+    <tr>
+      <td>Sub-LLM Calls</td>
+      <td><code>llm_query(prompt)</code> &mdash; sequential only</td>
+      <td><code>llm_query(prompt)</code> + <code>llm_query_batched(prompts)</code> for concurrent calls</td>
+    </tr>
+    <tr>
+      <td>Communication Protocol</td>
+      <td>Direct Python function call</td>
+      <td>TCP socket server with 4-byte length-prefixed JSON</td>
+    </tr>
+    <tr>
+      <td>Max Iterations (default)</td>
+      <td>20</td>
+      <td>30</td>
+    </tr>
+    <tr>
+      <td>Default Root Model</td>
+      <td>gpt-5</td>
+      <td>Configurable (any backend)</td>
+    </tr>
+    <tr>
+      <td>Default Sub Model</td>
+      <td>gpt-5 (configurable)</td>
+      <td>Same as root, or separate <code>other_backends</code></td>
+    </tr>
+    <tr>
+      <td>Persistent Multi-turn</td>
+      <td><span class="tag tag-red">No</span></td>
+      <td><span class="tag tag-green">Yes</span> (LocalREPL, context/history versioning)</td>
+    </tr>
+    <tr>
+      <td>Batched LLM Queries</td>
+      <td><span class="tag tag-red">No</span></td>
+      <td><span class="tag tag-green">Yes</span> (<code>llm_query_batched()</code>)</td>
+    </tr>
+    <tr>
+      <td>Trajectory Logging</td>
+      <td>Colorful console logger (ANSI)</td>
+      <td>JSON-lines logger + Rich console + React visualizer</td>
+    </tr>
+    <tr>
+      <td>Visualization</td>
+      <td><span class="tag tag-red">No</span></td>
+      <td><span class="tag tag-green">Yes</span> (React app at <code>visualizer/</code>)</td>
+    </tr>
+    <tr>
+      <td>Return Type</td>
+      <td><code>str</code> (plain answer)</td>
+      <td><code>RLMChatCompletion</code> (answer + usage + timing + model info)</td>
+    </tr>
+    <tr>
+      <td>Token/Cost Tracking</td>
+      <td><span class="tag tag-red">Not implemented</span></td>
+      <td><span class="tag tag-green">Per-model usage tracking</span> (UsageSummary)</td>
+    </tr>
+    <tr>
+      <td>Custom System Prompt</td>
+      <td><span class="tag tag-red">No</span></td>
+      <td><span class="tag tag-green">Yes</span> (<code>custom_system_prompt</code> param)</td>
+    </tr>
+    <tr>
+      <td>Cloud Sandboxing</td>
+      <td><span class="tag tag-red">No</span></td>
+      <td><span class="tag tag-green">Yes</span> (Modal, Prime, E2B, Daytona via HTTP broker)</td>
+    </tr>
+    <tr>
+      <td>Docker Support</td>
+      <td><span class="tag tag-red">No</span></td>
+      <td><span class="tag tag-green">Yes</span> (DockerREPL with custom images)</td>
+    </tr>
+    <tr>
+      <td>Context Manager</td>
+      <td><span class="tag tag-red">No</span></td>
+      <td><span class="tag tag-green">Yes</span> (<code>with RLM(...) as rlm:</code>)</td>
+    </tr>
+    <tr>
+      <td>SHOW_VARS()</td>
+      <td><span class="tag tag-red">No</span></td>
+      <td><span class="tag tag-green">Yes</span> (list all REPL variables)</td>
+    </tr>
+    <tr>
+      <td>Depth Control</td>
+      <td>Stored but unused</td>
+      <td>Active: depth &ge; max_depth falls back to plain LM call</td>
+    </tr>
+    <tr>
+      <td>Test Suite</td>
+      <td>None</td>
+      <td>100+ tests (pytest, CI/CD)</td>
+    </tr>
+    <tr>
+      <td>Package Install</td>
+      <td>Manual (clone + pip install -r requirements.txt)</td>
+      <td><code>pip install rlms</code> (PyPI, uv, pyproject.toml)</td>
+    </tr>
+    <tr>
+      <td>Total LOC (approx)</td>
+      <td>~600</td>
+      <td>~3000+</td>
+    </tr>
+    <tr>
+      <td>Dependencies</td>
+      <td>openai, dotenv, rich</td>
+      <td>openai, anthropic, google-genai, portkey-ai, requests, dotenv, rich, + optional (modal, e2b, dill, daytona, prime)</td>
+    </tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============================================ -->
+<section id="execution-flow">
+<h2>4. Execution Flow (Side-by-Side)</h2>
+
+<h3>RLM-Minimal: Single Iteration</h3>
+<div class="pipeline">
+  <div class="pipeline-step">Build messages<br><small>system + user prompt</small></div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step">OpenAI API call<br><small>gpt-5</small></div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step">Parse response<br><small>find ```repl``` blocks</small></div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step">exec() in REPLEnv<br><small>same process</small></div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step">Check FINAL()<br><small>return or loop</small></div>
+</div>
+
+<h3>RLM Full: Single Iteration</h3>
+<div class="pipeline">
+  <div class="pipeline-step">Build messages<br><small>system + metadata + user</small></div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step">LMHandler.completion()<br><small>TCP &rarr; BaseLM client</small></div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step">Parse response<br><small>find_code_blocks()</small></div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step">env.execute_code()<br><small>Local/Docker/Modal/...</small></div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step">find_final_answer()<br><small>+ log iteration</small></div>
+</div>
+
+<h3>Sub-LLM Call Path</h3>
+<div class="side-by-side">
+  <div class="box box-minimal">
+    <h4>Minimal: Direct Call</h4>
+<pre><code><span class="cmt"># Inside REPL, llm_query() calls:</span>
+Sub_RLM.completion(prompt)
+  <span class="kw">-></span> OpenAIClient.completion(messages)
+    <span class="kw">-></span> openai.chat.completions.create(...)
+    <span class="kw">-></span> <span class="kw">return</span> response.choices[0].message.content</code></pre>
+  </div>
+  <div class="box box-full">
+    <h4>Full: Socket Protocol</h4>
+<pre><code><span class="cmt"># Inside REPL, llm_query() calls:</span>
+socket.connect((host, port))
+socket_send(LMRequest(prompt, model))
+  <span class="kw">-></span> [4-byte len][JSON payload] over TCP
+  <span class="kw">-></span> LMHandler receives, routes to BaseLM
+  <span class="kw">-></span> BaseLM.completion(prompt)
+  <span class="kw">-></span> LMHandler sends LMResponse back
+socket_recv() <span class="kw">-></span> parse response</code></pre>
+  </div>
+</div>
+
+<div class="callout-orange callout">
+  <strong>Why the socket approach?</strong> When the REPL runs in Docker or a cloud sandbox (Modal, Prime), it's in a separate process/machine. Direct function calls won't work. The TCP socket protocol allows the sandboxed environment to make LLM requests back to the host where the API keys live. For cloud sandboxes, an HTTP broker pattern bridges the gap.
+</div>
+</section>
+
+<!-- ============================================ -->
+<section id="code-diffs">
+<h2>5. Key Code Differences</h2>
+
+<h3>Initialization</h3>
+<div class="side-by-side">
+  <div class="box box-minimal">
+    <h4>Minimal</h4>
+<pre><code>rlm = RLM_REPL(
+    model=<span class="str">"gpt-5"</span>,
+    recursive_model=<span class="str">"gpt-5-nano"</span>,
+    enable_logging=<span class="kw">True</span>,
+    max_iterations=<span class="str">10</span>
+)
+result = rlm.completion(
+    context=my_text,
+    query=<span class="str">"Find the magic number"</span>
+)
+<span class="cmt"># result is a str</span></code></pre>
+  </div>
+  <div class="box box-full">
+    <h4>Full</h4>
+<pre><code>rlm = RLM(
+    backend=<span class="str">"openai"</span>,
+    backend_kwargs={
+        <span class="str">"model_name"</span>: <span class="str">"gpt-5-nano"</span>,
+        <span class="str">"api_key"</span>: os.getenv(<span class="str">"OPENAI_API_KEY"</span>),
+    },
+    environment=<span class="str">"local"</span>,  <span class="cmt"># or "docker", "modal"</span>
+    verbose=<span class="kw">True</span>,
+    max_iterations=<span class="str">30</span>,
+)
+result = rlm.completion(
+    <span class="str">"Find the magic number"</span>
+)
+<span class="cmt"># result is RLMChatCompletion</span>
+<span class="cmt"># result.response, result.usage_summary, etc.</span></code></pre>
+  </div>
+</div>
+
+<h3>API Differences</h3>
+<table class="cmp-table">
+  <thead>
+    <tr><th>Aspect</th><th>Minimal</th><th>Full</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>completion() signature</td>
+      <td><code>completion(context, query)</code></td>
+      <td><code>completion(prompt, root_prompt=None)</code></td>
+    </tr>
+    <tr>
+      <td>Context handling</td>
+      <td>Separate <code>context</code> + <code>query</code> params</td>
+      <td>Single <code>prompt</code> param (str or dict), optional <code>root_prompt</code></td>
+    </tr>
+    <tr>
+      <td>Return value</td>
+      <td><code>str</code></td>
+      <td><code>RLMChatCompletion</code> dataclass with <code>.response</code>, <code>.usage_summary</code>, <code>.execution_time</code>, <code>.root_model</code></td>
+    </tr>
+    <tr>
+      <td>Reset/Cleanup</td>
+      <td><code>rlm.reset()</code> (manual)</td>
+      <td>Automatic via context manager; <code>rlm.close()</code> for persistent</td>
+    </tr>
+    <tr>
+      <td>Prompt metadata</td>
+      <td>None (just system + user)</td>
+      <td>QueryMetadata with context lengths, types, chunk info sent to LLM</td>
+    </tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============================================ -->
+<section id="repl-env">
+<h2>6. REPL Environment Comparison</h2>
+
+<table class="cmp-table">
+  <thead>
+    <tr><th>Aspect</th><th>Minimal (REPLEnv)</th><th>Full (LocalREPL)</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Execution method</td>
+      <td><code>exec()</code> in-process with custom globals</td>
+      <td><code>exec()</code> in-process with custom globals (same approach)</td>
+    </tr>
+    <tr>
+      <td>Sub-LLM function</td>
+      <td><code>llm_query(prompt)</code> &rarr; Sub_RLM (direct call)</td>
+      <td><code>llm_query(prompt)</code> &rarr; TCP socket to LMHandler</td>
+    </tr>
+    <tr>
+      <td>Batched queries</td>
+      <td><span class="tag tag-red">No</span></td>
+      <td><code>llm_query_batched(prompts)</code> &rarr; concurrent via socket</td>
+    </tr>
+    <tr>
+      <td>Variable inspection</td>
+      <td><span class="tag tag-red">No</span></td>
+      <td><code>SHOW_VARS()</code> lists all created variables</td>
+    </tr>
+    <tr>
+      <td>Context loading</td>
+      <td>JSON file or text file in temp dir; loaded via generated code</td>
+      <td>Same approach + support for versioned contexts (context_0, context_1, ...)</td>
+    </tr>
+    <tr>
+      <td>Auto-print last expression</td>
+      <td><span class="tag tag-green">Yes</span> (notebook-style)</td>
+      <td>Varies by environment</td>
+    </tr>
+    <tr>
+      <td>Blocked builtins</td>
+      <td>input, eval, exec, compile, globals, locals</td>
+      <td>Similar restrictions per environment</td>
+    </tr>
+    <tr>
+      <td>Output truncation</td>
+      <td>Configurable in utils</td>
+      <td>20K character limit per execution result</td>
+    </tr>
+    <tr>
+      <td>Thread safety</td>
+      <td><span class="tag tag-green">Yes</span> (threading.Lock)</td>
+      <td><span class="tag tag-green">Yes</span></td>
+    </tr>
+    <tr>
+      <td>Temp directory</td>
+      <td><span class="tag tag-green">Yes</span> (auto-cleanup on __del__)</td>
+      <td><span class="tag tag-green">Yes</span></td>
+    </tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============================================ -->
+<section id="prompts">
+<h2>7. System Prompts Comparison</h2>
+
+<p>Both share the same core system prompt text. Key differences:</p>
+
+<table class="cmp-table">
+  <thead>
+    <tr><th>Aspect</th><th>Minimal</th><th>Full</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Base prompt</td>
+      <td>REPL_SYSTEM_PROMPT (~48 lines)</td>
+      <td>RLM_SYSTEM_PROMPT (~89 lines, more examples)</td>
+    </tr>
+    <tr>
+      <td>Examples included</td>
+      <td>2: chunking, markdown headers</td>
+      <td>4: chunking, iterative book reading, batched concurrent, markdown headers</td>
+    </tr>
+    <tr>
+      <td>llm_query_batched mention</td>
+      <td><span class="tag tag-red">No</span></td>
+      <td><span class="tag tag-green">Yes</span> (dedicated example)</td>
+    </tr>
+    <tr>
+      <td>SHOW_VARS() mention</td>
+      <td><span class="tag tag-red">No</span></td>
+      <td><span class="tag tag-green">Yes</span></td>
+    </tr>
+    <tr>
+      <td>FINAL_VAR warning</td>
+      <td>Basic instruction</td>
+      <td>Explicit WARNING about common mistake (create var first, then FINAL_VAR in next step)</td>
+    </tr>
+    <tr>
+      <td>Context metadata</td>
+      <td>None</td>
+      <td>QueryMetadata with total chars, chunk lengths, context type sent as assistant message</td>
+    </tr>
+    <tr>
+      <td>User prompt per iteration</td>
+      <td>Includes the query text in every iteration</td>
+      <td>Optional root_prompt; includes context_count and history_count</td>
+    </tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============================================ -->
+<section id="backends">
+<h2>8. Backends &amp; Environments</h2>
+
+<h3>LLM Backends</h3>
+<table class="cmp-table">
+  <thead>
+    <tr><th>Backend</th><th>Minimal</th><th>Full</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>OpenAI</td><td><span class="tag tag-green">Yes</span></td><td><span class="tag tag-green">Yes</span></td></tr>
+    <tr><td>Anthropic (Claude)</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td></tr>
+    <tr><td>Google Gemini</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td></tr>
+    <tr><td>Azure OpenAI</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td></tr>
+    <tr><td>Portkey AI</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td></tr>
+    <tr><td>OpenRouter</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td></tr>
+    <tr><td>vLLM</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td></tr>
+    <tr><td>LiteLLM</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td></tr>
+    <tr><td>Vercel AI</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td></tr>
+  </tbody>
+</table>
+
+<h3>Execution Environments</h3>
+<table class="cmp-table">
+  <thead>
+    <tr><th>Environment</th><th>Minimal</th><th>Full</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Local REPL</td><td><span class="tag tag-green">Yes</span></td><td><span class="tag tag-green">Yes</span></td><td>In-process Python execution</td></tr>
+    <tr><td>Docker</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td><td>Container isolation</td></tr>
+    <tr><td>Modal</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td><td>Cloud sandbox + HTTP broker</td></tr>
+    <tr><td>Prime Intellect</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td><td>Cloud sandbox</td></tr>
+    <tr><td>E2B</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td><td>Code interpreter</td></tr>
+    <tr><td>Daytona</td><td><span class="tag tag-red">No</span></td><td><span class="tag tag-green">Yes</span></td><td>Dev environment</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============================================ -->
+<section id="file-structure">
+<h2>9. File Structure</h2>
+
+<div class="side-by-side">
+  <div class="box box-minimal">
+    <h4>RLM-Minimal (~15 files)</h4>
+    <div class="file-tree">
+<span class="dir">rlm-minimal/</span>
+  <span class="file">README.md</span>
+  <span class="file">LICENSE</span>
+  <span class="file">requirements.txt</span>
+  <span class="highlight">main.py</span>               <span class="cmt"># Needle-in-haystack example</span>
+  <span class="dir">rlm/</span>
+    <span class="file">__init__.py</span>            <span class="cmt"># Exports RLM base class</span>
+    <span class="highlight">rlm.py</span>               <span class="cmt"># Abstract base class</span>
+    <span class="highlight">rlm_repl.py</span>          <span class="cmt"># Main RLM_REPL class</span>
+    <span class="highlight">repl.py</span>              <span class="cmt"># REPLEnv + Sub_RLM</span>
+    <span class="dir">utils/</span>
+      <span class="file">llm.py</span>             <span class="cmt"># OpenAI client wrapper</span>
+      <span class="file">prompts.py</span>         <span class="cmt"># System & user prompts</span>
+      <span class="file">utils.py</span>           <span class="cmt"># Code parsing, execution</span>
+    <span class="dir">logger/</span>
+      <span class="file">root_logger.py</span>     <span class="cmt"># ANSI color logger</span>
+      <span class="file">repl_logger.py</span>     <span class="cmt"># Rich REPL logger</span>
+    </div>
+  </div>
+  <div class="box box-full">
+    <h4>RLM Full (~50+ files)</h4>
+    <div class="file-tree">
+<span class="dir">rlm/</span>
+  <span class="file">pyproject.toml, Makefile, uv.lock</span>
+  <span class="dir">rlm/</span>
+    <span class="dir">core/</span>
+      <span class="highlight">rlm.py</span>           <span class="cmt"># Main RLM class (400 lines)</span>
+      <span class="file">types.py</span>           <span class="cmt"># 10+ dataclasses</span>
+      <span class="file">lm_handler.py</span>      <span class="cmt"># TCP server</span>
+      <span class="file">comms_utils.py</span>     <span class="cmt"># Socket protocol</span>
+    <span class="dir">clients/</span>             <span class="cmt"># 8 LLM backend files</span>
+      <span class="file">base_lm.py, openai.py, anthropic.py,</span>
+      <span class="file">gemini.py, azure_openai.py, litellm.py,</span>
+      <span class="file">portkey.py</span>
+    <span class="dir">environments/</span>        <span class="cmt"># 6 environment files</span>
+      <span class="file">base_env.py, local_repl.py, docker_repl.py,</span>
+      <span class="file">modal_repl.py, prime_repl.py, e2b_repl.py,</span>
+      <span class="file">daytona_repl.py, constants.py</span>
+    <span class="dir">utils/</span>
+      <span class="file">prompts.py, parsing.py, rlm_utils.py</span>
+    <span class="dir">logger/</span>
+      <span class="file">rlm_logger.py, verbose.py</span>
+  <span class="dir">examples/</span>              <span class="cmt"># 8 example scripts</span>
+  <span class="dir">tests/</span>                 <span class="cmt"># 100+ tests</span>
+  <span class="dir">visualizer/</span>            <span class="cmt"># React app</span>
+  <span class="dir">docs/</span>                  <span class="cmt"># MDX documentation</span>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ============================================ -->
+<section id="quickstart">
+<h2>10. Getting Started with RLM-Minimal</h2>
+
+<h3>Step 1: Install Dependencies</h3>
+<pre><code><span class="cmt"># From the rlm-minimal directory:</span>
+cd rlm-minimal
+pip install -r requirements.txt
+
+<span class="cmt"># This installs: openai, python-dotenv, rich</span></code></pre>
+
+<h3>Step 2: Set Your API Key</h3>
+<pre><code><span class="cmt"># Option A: Environment variable</span>
+export OPENAI_API_KEY="sk-..."
+
+<span class="cmt"># Option B: .env file in rlm-minimal/</span>
+echo 'OPENAI_API_KEY=sk-...' > .env</code></pre>
+
+<h3>Step 3: Run the Needle-in-Haystack Example</h3>
+<pre><code>python main.py
+
+<span class="cmt"># This generates 1M lines of random text with a hidden "magic number"</span>
+<span class="cmt"># and asks the LLM to find it using the REPL environment.</span>
+<span class="cmt"># Expected output: Result: 1234567. Expected: 1234567</span></code></pre>
+
+<h3>Step 4: Run a Simpler Custom Task</h3>
+<pre><code><span class="kw">from</span> rlm.rlm_repl <span class="kw">import</span> RLM_REPL
+
+rlm = RLM_REPL(
+    model=<span class="str">"gpt-4o-mini"</span>,          <span class="cmt"># cheaper root model</span>
+    recursive_model=<span class="str">"gpt-4o-mini"</span>, <span class="cmt"># cheaper sub model</span>
+    enable_logging=<span class="kw">True</span>,
+    max_iterations=<span class="str">5</span>
+)
+
+<span class="cmt"># Simple task: analyze a small dataset</span>
+context = <span class="str">"""
+Name,Age,City,Score
+Alice,28,New York,85
+Bob,35,London,92
+Charlie,22,Tokyo,78
+Diana,41,Paris,95
+Eve,30,Berlin,88
+"""</span>
+
+result = rlm.completion(
+    context=context,
+    query=<span class="str">"Who has the highest score? What's the average age?"</span>
+)
+print(result)</code></pre>
+
+<div class="callout">
+  <strong>Note on models:</strong> The default models in <code>main.py</code> are <code>gpt-5</code> and <code>gpt-5-nano</code>. You can use any OpenAI model &mdash; <code>gpt-4o</code>, <code>gpt-4o-mini</code>, etc. For testing, <code>gpt-4o-mini</code> is cheapest.
+</div>
+</section>
+
+<!-- ============================================ -->
+<section id="dataset-pipeline">
+<h2>11. Dataset Curation Pipeline (RLAM Idea)</h2>
+
+<p>The idea: use RLM's iterative REPL + sub-LLM architecture for <strong>auto-cleaning, curating, and augmenting</strong> messy HuggingFace datasets. The LLM writes code to process rows while calling sub-LLMs for semantic understanding.</p>
+
+<h3>Why RLM Is Well-Suited for This</h3>
+<ul style="margin: 0.5rem 0 1rem 1.5rem;">
+  <li><strong>Large context handling:</strong> Datasets can be huge. RLM's chunking strategies handle this naturally.</li>
+  <li><strong>Code + Semantics:</strong> The LLM can write pandas/data-processing code AND call sub-LLMs for semantic tasks (classify, fix, fill gaps).</li>
+  <li><strong>Iterative refinement:</strong> The multi-iteration loop lets the model inspect data, form a cleaning plan, execute it, verify results, then refine.</li>
+  <li><strong>Sub-LLM delegation:</strong> Each row or chunk can be sent to a sub-LLM for classification, correction, or synthetic generation.</li>
+</ul>
+
+<h3>Proposed Pipeline</h3>
+<div class="pipeline">
+  <div class="pipeline-step" style="border-color: var(--green);">1. Load Dataset<br><small>HF dataset &rarr; context</small></div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step" style="border-color: var(--orange);">2. Profile &amp; Assess<br><small>LLM inspects quality</small></div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step" style="border-color: var(--accent);">3. Clean &amp; Fix<br><small>sub-LLM per row/chunk</small></div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step" style="border-color: var(--accent2);">4. Fill Gaps<br><small>synthetic generation</small></div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step" style="border-color: var(--pink);">5. Validate &amp; Export<br><small>quality check + save</small></div>
+</div>
+
+<h3>How It Would Work with RLM-Minimal</h3>
+<pre><code><span class="kw">from</span> rlm.rlm_repl <span class="kw">import</span> RLM_REPL
+<span class="kw">import</span> json
+
+<span class="cmt"># Load a messy dataset (e.g., from HuggingFace)</span>
+<span class="cmt"># For example: a dataset with missing values, inconsistent formatting, typos</span>
+dirty_dataset = [
+    {<span class="str">"text"</span>: <span class="str">"The cpaital of France is Paris"</span>, <span class="str">"label"</span>: <span class="str">"geography"</span>},
+    {<span class="str">"text"</span>: <span class="str">"Python is a programming langauge"</span>, <span class="str">"label"</span>: <span class="str">""</span>},      <span class="cmt"># missing label</span>
+    {<span class="str">"text"</span>: <span class="str">""</span>, <span class="str">"label"</span>: <span class="str">"science"</span>},                                     <span class="cmt"># missing text</span>
+    {<span class="str">"text"</span>: <span class="str">"Einstein developed relativity"</span>, <span class="str">"label"</span>: <span class="str">"SCIENCE"</span>},    <span class="cmt"># inconsistent case</span>
+    {<span class="str">"text"</span>: <span class="str">"2+2=4"</span>, <span class="str">"label"</span>: <span class="str">"math"</span>},
+]
+
+rlm = RLM_REPL(
+    model=<span class="str">"gpt-4o"</span>,
+    recursive_model=<span class="str">"gpt-4o-mini"</span>,
+    enable_logging=<span class="kw">True</span>,
+    max_iterations=<span class="str">15</span>
+)
+
+result = rlm.completion(
+    context=json.dumps(dirty_dataset, indent=2),
+    query=<span class="str">"""You are a dataset curator. Analyze this dataset and:
+1. Profile the data quality (missing values, typos, inconsistencies)
+2. Fix typos using sub-LLM calls
+3. Fill in missing labels by classifying text with sub-LLM
+4. Generate synthetic examples for underrepresented categories
+5. Normalize all labels to lowercase
+6. Return the cleaned + augmented dataset as JSON"""</span>
+)
+
+<span class="cmt"># The RLM will iteratively:</span>
+<span class="cmt"># - Write code to parse and profile the dataset</span>
+<span class="cmt"># - Call sub-LLMs to fix each row's issues</span>
+<span class="cmt"># - Generate synthetic rows for thin categories</span>
+<span class="cmt"># - Return a clean JSON dataset</span></code></pre>
+
+<h3>What the RLM Would Do Internally (Expected Iteration Flow)</h3>
+<pre><code><span class="cmt"># Iteration 0: Profile the dataset</span>
+```repl
+<span class="kw">import</span> json
+data = json.loads(context)
+print(f<span class="str">"Total rows: {len(data)}"</span>)
+<span class="kw">for</span> i, row <span class="kw">in</span> enumerate(data):
+    issues = []
+    <span class="kw">if not</span> row[<span class="str">'text'</span>]: issues.append(<span class="str">'missing text'</span>)
+    <span class="kw">if not</span> row[<span class="str">'label'</span>]: issues.append(<span class="str">'missing label'</span>)
+    print(f<span class="str">"Row {i}: {issues or 'OK'}"</span>)
+```
+
+<span class="cmt"># Iteration 1: Fix typos using sub-LLM</span>
+```repl
+cleaned = []
+<span class="kw">for</span> row <span class="kw">in</span> data:
+    <span class="kw">if</span> row[<span class="str">'text'</span>]:
+        fixed = llm_query(f<span class="str">"Fix any typos in this text, return ONLY the corrected text: {row['text']}"</span>)
+        row[<span class="str">'text'</span>] = fixed.strip()
+    cleaned.append(row)
+```
+
+<span class="cmt"># Iteration 2: Fill missing labels</span>
+```repl
+<span class="kw">for</span> row <span class="kw">in</span> cleaned:
+    <span class="kw">if not</span> row[<span class="str">'label'</span>] <span class="kw">and</span> row[<span class="str">'text'</span>]:
+        label = llm_query(f<span class="str">"Classify this text into one category (geography/science/math/tech): {row['text']}"</span>)
+        row[<span class="str">'label'</span>] = label.strip().lower()
+```
+
+<span class="cmt"># Iteration 3: Generate synthetic data for gaps</span>
+```repl
+<span class="kw">from</span> collections <span class="kw">import</span> Counter
+label_counts = Counter(r[<span class="str">'label'</span>] <span class="kw">for</span> r <span class="kw">in</span> cleaned <span class="kw">if</span> r[<span class="str">'label'</span>])
+min_count = max(label_counts.values())
+<span class="kw">for</span> label, count <span class="kw">in</span> label_counts.items():
+    <span class="kw">if</span> count < min_count:
+        needed = min_count - count
+        synthetic = llm_query(f<span class="str">"Generate {needed} factual statements about {label}. Return as JSON list."</span>)
+        <span class="cmt"># ... parse and add to dataset</span>
+```
+
+<span class="cmt"># Iteration 4: Return clean dataset</span>
+FINAL_VAR(final_dataset)</code></pre>
+
+<h3>Potential HuggingFace Datasets to Test With</h3>
+<table class="cmp-table">
+  <thead>
+    <tr><th>Dataset</th><th>Why It's Good for Testing</th><th>Size</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>imdb</code> (subset)</td>
+      <td>Well-known, simple text+label format, easy to inject noise</td>
+      <td>~50K reviews</td>
+    </tr>
+    <tr>
+      <td><code>ag_news</code> (subset)</td>
+      <td>4 categories, short texts, great for classification cleaning</td>
+      <td>~120K articles</td>
+    </tr>
+    <tr>
+      <td><code>tweet_eval</code></td>
+      <td>Inherently noisy (tweets), multiple tasks, real-world messiness</td>
+      <td>~60K tweets</td>
+    </tr>
+    <tr>
+      <td>Custom dirty CSV</td>
+      <td>Create your own with intentional issues for controlled testing</td>
+      <td>50-500 rows</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout-orange callout">
+  <strong>Recommended starting point:</strong> Create a small custom dirty dataset (50-100 rows) with known issues: typos, missing fields, inconsistent labels, duplicate rows. This gives you a controlled environment where you can verify every fix the RLM makes. Once that works, scale up to a real HuggingFace dataset subset.
+</div>
+
+<h3>Synthetic Data Generation Strategy</h3>
+<p>When the RLM finds gaps (missing info, underrepresented categories), it can:</p>
+<ul style="margin: 0.5rem 0 0 1.5rem;">
+  <li><strong>Fill missing fields:</strong> Use sub-LLM to infer from available data (e.g., classify unlabeled text)</li>
+  <li><strong>Generate new rows:</strong> Ask sub-LLM to create examples matching the dataset schema and distribution</li>
+  <li><strong>Paraphrase existing rows:</strong> Create variations of existing examples for augmentation</li>
+  <li><strong>Cross-reference:</strong> Use sub-LLM to verify facts or add missing context from its training data</li>
+</ul>
+</section>
+
+<footer style="text-align: center; padding: 2rem 0; color: var(--text-muted); border-top: 1px solid var(--border); margin-top: 2rem;">
+  Generated for rlm-explorations &mdash; Comparing <code>rlm-minimal/</code> vs <code>rlm/</code>
+</footer>
+
+</body>
+</html>
