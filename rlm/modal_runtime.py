@@ -57,10 +57,6 @@ def run_rlm_remote(
         recursive_model=recursive_model,
         max_iterations=max_iterations,
         enable_logging=True,
-        sub_rlm_mode="modal_sandbox",
-        sandbox_volumes={MOUNT_PATH: shared_volume},
-        sandbox_workdir=SOURCE_PATH_IN_IMAGE,
-        env_file_path=env_path,
-        sub_rlm_timeout=600,
+        sub_rlm_mode="local",  # Simple API calls, no Modal sandboxes
     )
     return rlm.completion(query=query, context_path=context_path)
