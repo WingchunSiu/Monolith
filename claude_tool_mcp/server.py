@@ -1,36 +1,31 @@
-"""MCP server that executes the shared-context Chat-RLM flow.
-
-Supports:
-- local file chat storage (default)
-- Cloudflare R2-backed chat storage via S3-compatible API
-- stdio and streamable HTTP transport modes
-"""
+"""MCP server that executes Chat-RLM calls against a shared Modal volume context."""
 
 from __future__ import annotations
 
 import getpass
-import importlib
 import json
 import os
 import platform
 import socket
 import subprocess
-import sys
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol
 
 from mcp.server.fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+
+try:
+    from modal_runtime import MOUNT_PATH, app, run_rlm_remote, shared_volume
+except ImportError:
+    from rlm.modal_runtime import MOUNT_PATH, app, run_rlm_remote, shared_volume
 
 
 DEFAULT_MODEL = "gpt-5"
 DEFAULT_RECURSIVE_MODEL = "gpt-5-nano"
 DEFAULT_CHAT_FILE = "chat.txt"
 DEFAULT_MAX_ITERATIONS = 10
-DEFAULT_CHAT_BACKEND = "file"
+DEFAULT_CONTEXT_RELPATH = "runs/0fad4ca550eb4d818b81a00c0f897218/context.txt"
 
 
 def _env_int(name: str, default: int) -> int:
@@ -43,138 +38,37 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-def project_root() -> Path:
-    # server.py is inside DeepRecurse/claude_tool_mcp
-    return Path(__file__).resolve().parents[1]
-
-
-def ensure_rlm_importable() -> None:
-    rlm_path = str(project_root() / "rlm-minimal")
-    if rlm_path not in sys.path:
-        sys.path.insert(0, rlm_path)
-
-
-def resolve_chat_path(chat_file: str) -> Path:
-    path = Path(chat_file)
-    if not path.is_absolute():
-        path = project_root() / path
-    return path
-
-
 class RLMConfig:
     model: str = DEFAULT_MODEL
     recursive_model: str = DEFAULT_RECURSIVE_MODEL
     max_iterations: int = DEFAULT_MAX_ITERATIONS
-    enable_logging: bool = False
-
-
-class ChatStore(Protocol):
-    def read_context(self) -> str: ...
-
-    def append_turn(self, query: str, answer: str) -> None: ...
-
-
-class FileChatStore:
-    def __init__(self, chat_path: Path):
-        self.chat_path = chat_path
-        self._ensure_file()
-
-    def _ensure_file(self) -> None:
-        self.chat_path.parent.mkdir(parents=True, exist_ok=True)
-        self.chat_path.touch(exist_ok=True)
-
-    def read_context(self) -> str:
-        context = self.chat_path.read_text(encoding="utf-8")
-        return context if context.strip() else "No prior chat history yet."
-
-    def append_turn(self, query: str, answer: str) -> None:
-        with self.chat_path.open("a", encoding="utf-8") as file:
-            file.write(f"\nUSER: {query}\nASSISTANT: {answer}\n")
-
-
-class R2ChatStore:
-    def __init__(self, key: str):
-        self.key = key
-        self._client = self._build_client()
-        self.bucket = os.getenv("R2_BUCKET")
-        if not self.bucket:
-            raise RuntimeError("R2_BUCKET is required for r2 chat backend")
-
-    @staticmethod
-    def _build_client():
-        try:
-            import boto3
-        except ImportError as exc:
-            raise RuntimeError("boto3 is required for R2 chat backend") from exc
-
-        endpoint = os.getenv("R2_ENDPOINT_URL")
-        access_key = os.getenv("R2_ACCESS_KEY_ID")
-        secret_key = os.getenv("R2_SECRET_ACCESS_KEY")
-        region = os.getenv("R2_REGION", "auto")
-
-        if not endpoint or not access_key or not secret_key:
-            raise RuntimeError(
-                "R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY are required"
-            )
-
-        return boto3.client(
-            "s3",
-            endpoint_url=endpoint,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            region_name=region,
-        )
-
-    def read_context(self) -> str:
-        try:
-            response = self._client.get_object(Bucket=self.bucket, Key=self.key)
-            context = response["Body"].read().decode("utf-8")
-            return context if context.strip() else "No prior chat history yet."
-        except self._client.exceptions.NoSuchKey:
-            return "No prior chat history yet."
-        except Exception:
-            # Fail-open to keep server responsive when storage is temporarily unavailable.
-            return "No prior chat history yet."
-
-    def append_turn(self, query: str, answer: str) -> None:
-        existing = self.read_context()
-        if existing == "No prior chat history yet.":
-            existing = ""
-
-        updated = f"{existing}\nUSER: {query}\nASSISTANT: {answer}\n"
-        self._client.put_object(Bucket=self.bucket, Key=self.key, Body=updated.encode("utf-8"))
-
-
-def get_chat_store(chat_file: str) -> ChatStore:
-    backend = os.getenv("CHAT_STORE_BACKEND", DEFAULT_CHAT_BACKEND).strip().lower()
-    if backend == "r2":
-        key = chat_file.lstrip("/")
-        return R2ChatStore(key=key)
-
-    return FileChatStore(resolve_chat_path(chat_file))
 
 
 class RLMService:
     def __init__(self, config: RLMConfig):
         self.config = config
-        self._rlm = None
 
-    def _get_rlm(self):
-        if self._rlm is None:
-            ensure_rlm_importable()
-            rlm_repl_module = importlib.import_module("rlm.rlm_repl")
-            rlm_cls = rlm_repl_module.RLM_REPL
-            self._rlm = rlm_cls(
-                api_key=os.getenv("OPENAI_API_KEY"),
+    def answer(self, query: str) -> str:
+        with app.run():
+            return run_rlm_remote.remote(
+                query=query,
+                context_relpath=DEFAULT_CONTEXT_RELPATH,
                 model=self.config.model,
                 recursive_model=self.config.recursive_model,
                 max_iterations=self.config.max_iterations,
-                enable_logging=self.config.enable_logging,
             )
-        return self._rlm
 
-    def answer(self, context: str, query: str) -> str:
-        return self._get_rlm().completion(context=context, query=query)
+
+@app.function(
+    volumes={MOUNT_PATH: shared_volume},
+    timeout=300,
+)
+def append_context_remote(context_relpath: str, transcript_block: str) -> None:
+    normalized_relpath = context_relpath.lstrip("/")
+    context_path = os.path.join(MOUNT_PATH, normalized_relpath)
+    os.makedirs(os.path.dirname(context_path), exist_ok=True)
+    with open(context_path, "a", encoding="utf-8") as file:
+        file.write(transcript_block)
 
 
 mcp = FastMCP(
@@ -213,16 +107,13 @@ def chat_rlm_query(
     clean_query = query.strip()
     if not clean_query:
         return "Error: query cannot be empty."
-
-    store = get_chat_store(chat_file)
-    context = store.read_context()
+    _ = chat_file  # preserved for backward-compatible tool signature
 
     try:
-        answer = rlm_service.answer(context=context, query=clean_query)
+        answer = rlm_service.answer(query=clean_query)
     except Exception as exc:
         return f"Error running RLM: {exc}"
 
-    store.append_turn(clean_query, answer)
     return answer
 
 
@@ -348,6 +239,27 @@ def _format_transcript(session_data: dict) -> str:
     return "\n".join(lines)
 
 
+def _append_transcript_to_shared_context(transcript: str, session_id: str | None) -> None:
+    timestamp = datetime.now(timezone.utc).isoformat()
+    sid = session_id or "unknown-session"
+    block = (
+        "\n\n"
+        + "=" * 72
+        + "\n"
+        + f"SESSION CONTEXT UPLOAD: {sid}\n"
+        + f"uploaded_at: {timestamp}\n"
+        + "=" * 72
+        + "\n"
+        + transcript.strip()
+        + "\n"
+    )
+    with app.run():
+        append_context_remote.remote(
+            context_relpath=DEFAULT_CONTEXT_RELPATH,
+            transcript_block=block,
+        )
+
+
 def _find_session_file(session_id: str | None, project_dir: str | None) -> Path | None:
     """Find session JSONL file. Returns None if not found."""
     base = Path(DEFAULT_SESSIONS_DIR)
@@ -376,52 +288,66 @@ def _find_session_file(session_id: str | None, project_dir: str | None) -> Path 
 
 @mcp.tool()
 def upload_context(
+    transcript: str | None = None,
     session_id: str | None = None,
     project_dir: str | None = None,
     thread_id: str | None = None,
+    developer: str | None = None,
     tool_token: str | None = None,
 ) -> str:
     """
     Upload a Claude Code session transcript to the shared chat context store.
 
-    This parses the session JSONL, extracts messages with metadata, and appends
-    the formatted transcript to the chat store so the RLM can reason over it.
+    This appends a transcript block into the shared Modal volume context file
+    so subsequent RLM calls can use it.
 
     Args:
-        session_id: Specific session ID to upload. If omitted, uploads the latest session.
+        transcript: Raw transcript text. If omitted, reads local Claude session JSONL.
+        session_id: Session identifier. If omitted and transcript is provided, auto-generated.
         project_dir: Project directory name under ~/.claude/projects/. If omitted, searches all.
-        thread_id: Chat thread to append the transcript to. Defaults to 'transcripts'.
+        thread_id: Legacy parameter retained for compatibility.
+        developer: Legacy parameter retained for compatibility.
         tool_token: Optional auth token.
     """
     if not _is_authorized(tool_token):
         return "Error: unauthorized tool call."
+    _ = thread_id
+    _ = developer
 
-    thread_id = (thread_id or "transcripts").strip()
+    resolved_session_id = session_id
+    transcript_text = (transcript or "").strip()
 
-    jsonl_path = _find_session_file(session_id, project_dir)
-    if jsonl_path is None:
-        return f"Error: no session found (session_id={session_id}, project_dir={project_dir})"
+    if transcript_text:
+        if not resolved_session_id:
+            resolved_session_id = datetime.now(timezone.utc).strftime(
+                "manual-%Y%m%dT%H%M%SZ"
+            )
+    else:
+        jsonl_path = _find_session_file(session_id, project_dir)
+        if jsonl_path is None:
+            return (
+                f"Error: no session found "
+                f"(session_id={session_id}, project_dir={project_dir})"
+            )
 
-    session_data = _parse_session(jsonl_path)
-    if session_data["message_count"] == 0:
-        return f"Session {jsonl_path.stem} is empty, nothing to upload."
+        session_data = _parse_session(jsonl_path)
+        if session_data["message_count"] == 0:
+            return f"Session {jsonl_path.stem} is empty, nothing to upload."
 
-    transcript = _format_transcript(session_data)
+        resolved_session_id = session_data["session_id"]
+        transcript_text = _format_transcript(session_data)
 
-    # Append to chat store (same backend as chat_rlm_query uses)
-    store = get_chat_store(f"{thread_id}/{session_data['session_id']}.txt")
-    # Write full transcript as a single turn
-    store.append_turn(
-        query=f"[SESSION UPLOAD] {session_data['session_id']}",
-        answer=transcript,
-    )
+    try:
+        _append_transcript_to_shared_context(
+            transcript=transcript_text,
+            session_id=resolved_session_id,
+        )
+    except Exception as exc:
+        return f"Error uploading transcript to shared context: {exc}"
 
-    meta = session_data["metadata"]
     return (
-        f"Uploaded session {session_data['session_id']} "
-        f"({session_data['message_count']} messages, "
-        f"developer={meta['developer']}, branch={meta['git_branch']}) "
-        f"to thread '{thread_id}'."
+        f"Uploaded transcript for session '{resolved_session_id}' "
+        f"to shared context '{DEFAULT_CONTEXT_RELPATH}'."
     )
 
 
@@ -429,13 +355,12 @@ def upload_context(
 async def rlm_http(request: Request) -> JSONResponse:
     payload = await request.json()
     query = str(payload.get("query", "")).strip()
-    context = str(payload.get("context", ""))
 
     if not query:
         return JSONResponse({"error": "query is required"}, status_code=400)
 
     try:
-        answer = rlm_service.answer(context=context, query=query)
+        answer = rlm_service.answer(query=query)
     except Exception as exc:
         return JSONResponse({"error": f"Error running RLM: {exc}"}, status_code=500)
 
