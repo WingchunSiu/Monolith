@@ -1,28 +1,47 @@
-"""CLI entry point for querying transcripts via Modal + RLM.
+"""CLI entry point for querying a codebase context via Modal + RLM.
 
 Usage:
-    python -m deeprecurse.query "why did we decide on PostgreSQL?" --repo myrepo
+    python -m deeprecurse.query "why did we decide on PostgreSQL?" --codebase myproject
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Query session transcripts using RLM on Modal."
+        description="Query a codebase context using RLM on Modal."
     )
     parser.add_argument("query", help="Natural-language question to ask.")
-    parser.add_argument("--repo", required=True, help="Repository name.")
+    parser.add_argument("--codebase", required=True, help="Codebase name.")
+    parser.add_argument("--model", default="gpt-5", help="Root model.")
+    parser.add_argument("--recursive-model", default="gpt-5-nano", help="Sub-LLM model.")
+    parser.add_argument("--max-iterations", type=int, default=10, help="Max RLM iterations.")
     args = parser.parse_args()
 
-    from deeprecurse.modal_app import app, run_query
+    # Add rlm/ to path so we can import modal_runtime
+    rlm_path = str(Path(__file__).resolve().parent.parent / "rlm")
+    if rlm_path not in sys.path:
+        sys.path.insert(0, rlm_path)
 
-    print(f"Querying repo '{args.repo}'...", file=sys.stderr)
-    with app.run():
-        answer = run_query.remote(query=args.query, repo=args.repo)
+    import modal
+    from modal_runtime import app, run_rlm_remote
+
+    context_relpath = f"{args.codebase}/context.txt"
+
+    print(f"Querying codebase '{args.codebase}'...", file=sys.stderr)
+    with modal.enable_output():
+        with app.run():
+            answer = run_rlm_remote.remote(
+                query=args.query,
+                context_relpath=context_relpath,
+                model=args.model,
+                recursive_model=args.recursive_model,
+                max_iterations=args.max_iterations,
+            )
     print(answer)
 
 
