@@ -124,25 +124,26 @@ class RLM_REPL(RLM):
             
             # Check for code blocks
             code_blocks = utils.find_code_blocks(response)
-            self.logger.log_model_response(response, has_tool_calls=code_blocks is not None)
-            
-            # Process code execution or add assistant message
-            if code_blocks is not None:
+            self.logger.log_model_response(response, has_tool_calls=bool(code_blocks))
+
+            # Always add assistant response to message history
+            self.messages.append({"role": "assistant", "content": response})
+
+            if code_blocks:
+                # Execute code and append results to messages
                 self.messages = utils.process_code_execution(
-                    response, self.messages, self.repl_env, 
+                    response, self.messages, self.repl_env,
                     self.repl_env_logger, self.logger
                 )
-            else:
-                # Add assistant message when there are no code blocks
-                assistant_message = {"role": "assistant", "content": "You responded with:\n" + response}
-                self.messages.append(assistant_message)
-            
-            # Check that model produced a final answer
+                # Don't check for FINAL() when code was executed —
+                # model should see execution results before concluding
+                continue
+
+            # Only check for final answer in text-only responses (no code)
             final_answer = utils.check_for_final_answer(
                 response, self.repl_env, self.logger,
             )
 
-            # In practice, you may need some guardrails here.
             if final_answer:
                 self.logger.log_final_response(final_answer)
                 return final_answer

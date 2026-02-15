@@ -19,23 +19,45 @@ def find_code_blocks(text: str) -> List[str]:
     
     return results
 
+def _extract_balanced_parens(text: str, start: int) -> Optional[str]:
+    """Extract content between balanced parentheses starting at position start.
+
+    start should point to the opening '('.
+    """
+    if start >= len(text) or text[start] != '(':
+        return None
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == '(':
+            depth += 1
+        elif text[i] == ')':
+            depth -= 1
+            if depth == 0:
+                return text[start + 1:i]
+    # No matching close paren — return everything after the opening paren
+    return text[start + 1:]
+
+
 def find_final_answer(text: str) -> Optional[Tuple[str, str]]:
     """
     Find FINAL(...) or FINAL_VAR(...) statement in response and return (type, content).
+    Handles nested parentheses by balancing them.
     Returns None if neither pattern is found.
     """
-    # Check for FINAL_VAR pattern first - must be at start of line
-    final_var_pattern = r'^\s*FINAL_VAR\((.*?)\)'
-    match = re.search(final_var_pattern, text, re.MULTILINE | re.DOTALL)
+    # Check for FINAL_VAR first
+    match = re.search(r'^\s*FINAL_VAR\(', text, re.MULTILINE)
     if match:
-        return ('FINAL_VAR', match.group(1).strip())
-    
-    # Check for FINAL pattern - must be at start of line
-    final_pattern = r'^\s*FINAL\((.*?)\)'
-    match = re.search(final_pattern, text, re.MULTILINE | re.DOTALL)
+        content = _extract_balanced_parens(text, match.end() - 1)
+        if content is not None:
+            return ('FINAL_VAR', content.strip())
+
+    # Check for FINAL (but not FINAL_VAR)
+    match = re.search(r'^\s*FINAL\(', text, re.MULTILINE)
     if match:
-        return ('FINAL', match.group(1).strip())
-    
+        content = _extract_balanced_parens(text, match.end() - 1)
+        if content is not None:
+            return ('FINAL', content.strip())
+
     return None
 
 

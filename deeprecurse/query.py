@@ -22,10 +22,10 @@ def main() -> None:
     parser.add_argument("--max-iterations", type=int, default=10, help="Max RLM iterations.")
     args = parser.parse_args()
 
-    # Add rlm/ to path so we can import modal_runtime
-    rlm_path = str(Path(__file__).resolve().parent.parent / "rlm")
-    if rlm_path not in sys.path:
-        sys.path.insert(0, rlm_path)
+    # Add mcp-modal/ to path so we can import modal_runtime
+    mcp_modal_path = str(Path(__file__).resolve().parent.parent / "mcp-modal")
+    if mcp_modal_path not in sys.path:
+        sys.path.insert(0, mcp_modal_path)
 
     import modal
     from modal_runtime import app, run_rlm_remote

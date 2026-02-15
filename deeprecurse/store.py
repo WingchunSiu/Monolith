@@ -8,12 +8,13 @@ Usage:
     cat session.txt | python -m deeprecurse.store - --codebase myproject
 
 Volume layout:
-    /rlm-data/{codebase}/context.txt   ← single file, appended to over time
+    /rlm-data/{codebase}/context.txt   <- single file, appended to over time
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -44,10 +45,10 @@ def main() -> None:
         print("No content to store.", file=sys.stderr)
         sys.exit(1)
 
-    # Add rlm/ to path so we can import modal_runtime
-    rlm_path = str(Path(__file__).resolve().parent.parent / "rlm")
-    if rlm_path not in sys.path:
-        sys.path.insert(0, rlm_path)
+    # Add mcp-modal/ to path so we can import modal_runtime
+    mcp_modal_path = str(Path(__file__).resolve().parent.parent / "mcp-modal")
+    if mcp_modal_path not in sys.path:
+        sys.path.insert(0, mcp_modal_path)
 
     from modal_runtime import shared_volume
 
@@ -71,7 +72,6 @@ def main() -> None:
             tmp_path = tmp.name
         batch.put_file(tmp_path, context_relpath)
 
-    import os
     os.unlink(tmp_path)
 
     print(f"Appended {len(text)} chars to {context_relpath} (total: {len(new_content)} chars)")

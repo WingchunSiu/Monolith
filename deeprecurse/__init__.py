@@ -1,1 +1,1 @@
-"""DeepRecurse: RLM on Modal Sandboxes with S3 transcript storage."""
+"""DeepRecurse: RLM on Modal with MCP integration."""

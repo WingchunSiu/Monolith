@@ -1,8 +1,5 @@
-# MacOS
-.DS_Store
-
-# Logs
-logs/
+.env
+*.DS_Store
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -22,8 +19,6 @@ eggs/
 .eggs/
 lib/
 lib64/
-!docs/src/lib/
-!visualizer/src/lib/
 parts/
 sdist/
 var/

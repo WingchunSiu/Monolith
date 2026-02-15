@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 import modal
 from dotenv import load_dotenv
@@ -22,12 +23,16 @@ MOUNT_PATH = "/rlm-data"
 SOURCE_PATH_IN_IMAGE = "/root/rlm-app"
 ENV_RELATIVE_PATH = ".env"
 
+# Resolve rlm package path relative to this file so deploy works from any directory
+_THIS_DIR = Path(__file__).resolve().parent
+_RLM_PACKAGE_DIR = str(_THIS_DIR / "rlm")
+
 app = modal.App(MODAL_APP_NAME)
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("openai", "python-dotenv", "rich", "fastapi[standard]")
-    .add_local_dir("rlm", remote_path=f"{SOURCE_PATH_IN_IMAGE}/rlm")
+    .add_local_dir(_RLM_PACKAGE_DIR, remote_path=f"{SOURCE_PATH_IN_IMAGE}/rlm")
 )
 
 shared_volume = modal.Volume.from_name(MODAL_VOLUME_NAME, create_if_missing=True)
