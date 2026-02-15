@@ -1,0 +1,5 @@
+modal
+openai
+python-dotenv
+rich
+mcp[cli]

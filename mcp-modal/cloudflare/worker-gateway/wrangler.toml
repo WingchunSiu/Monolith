@@ -1,0 +1,9 @@
+name = "deeprecurse-mcp-modal"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[observability]
+enabled = true
+
+[vars]
+MODAL_BACKEND_URL = "https://YOUR_MODAL_USERNAME--rlm-repl.modal.run"
