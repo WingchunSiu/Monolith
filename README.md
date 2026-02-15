@@ -28,7 +28,53 @@ Developer using Claude Code
               └─ Returns answer, appends turn
 ```
 
-## Setup
+## What Changed (for Cloudflare deployer)
+
+If you already have the CloudflareIntegration branch deployed, here's what to redeploy to get the new `upload_context` tool:
+
+**Step 1: Rebuild + push the container image** (Python MCP server)
+```bash
+# from repo root
+docker build -t deeprecurse-mcp:latest .
+# tag and push to your Cloudflare registry
+docker tag deeprecurse-mcp:latest registry.cloudflare.com/<account>/deeprecurse-rlm:latest
+docker push registry.cloudflare.com/<account>/deeprecurse-rlm:latest
+```
+
+**Step 2: Redeploy the Worker gateway**
+```bash
+cd cloudflare/worker-gateway
+npm install
+npx wrangler deploy
+```
+
+That's it. After redeploy, `tools/list` will show both `chat_rlm_query` and `upload_context`. No config changes needed — same env vars, same wrangler.toml.
+
+**Step 3 (optional): Each team member adds the SessionEnd hook**
+
+Each developer who wants auto-upload adds to their `.claude/settings.local.json`:
+```json
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/path/to/scripts/session_end_upload.sh",
+            "timeout": 30000
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Setup (from scratch)
 
 ### 1. Local development (stdio MCP)
 
