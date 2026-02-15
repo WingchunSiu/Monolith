@@ -79,6 +79,14 @@ class ModalSandboxSubRLM(RLM):
         if not self.sandbox_volumes:
             raise ValueError("sandbox_volumes is required for ModalSandboxSubRLM")
 
+    @staticmethod
+    def _display_text(text: str) -> str:
+        if text is None:
+            return "<none>"
+        if text == "":
+            return "<empty>"
+        return text
+
     def completion(self, prompt) -> str:
         try:
             import modal
@@ -103,6 +111,7 @@ class ModalSandboxSubRLM(RLM):
                 "workdir": self.sandbox_workdir,
                 "timeout": self.timeout + 30,
                 "env": {"PYTHONPATH": self.sandbox_workdir or "/root/rlm-app"},
+                "verbose": True
             }
             if self.sandbox_image_id:
                 create_kwargs["image"] = modal.Image.from_id(self.sandbox_image_id)
@@ -159,8 +168,9 @@ class ModalSandboxSubRLM(RLM):
                 "model": self.model,
                 "env_file_path": self.env_file_path,
             }
+            stdin_text = json.dumps(payload, ensure_ascii=False)
             try:
-                process.stdin.write(json.dumps(payload).encode("utf-8"))
+                process.stdin.write(stdin_text.encode("utf-8"))
                 process.stdin.write_eof()
                 process.stdin.drain()
             except Exception as write_exc:
@@ -193,6 +203,19 @@ class ModalSandboxSubRLM(RLM):
                 stdout = stdout.decode("utf-8", errors="replace")
             if isinstance(stderr, bytes):
                 stderr = stderr.decode("utf-8", errors="replace")
+
+            print("\n========== SUB-RLM SANDBOX PROCESS ==========")
+            print(f"returncode={process.returncode}")
+            if sandbox_debug:
+                print("sandbox_preflight:")
+                print(self._display_text(sandbox_debug))
+            print("stdin_preview:")
+            print(self._display_text(stdin_text))
+            print("stdout_preview:")
+            print(self._display_text(stdout))
+            print("stderr_preview:")
+            print(self._display_text(stderr))
+            print("=============================================\n")
 
             if process.returncode != 0:
                 error_msg = stderr.strip() if stderr and stderr.strip() else "sandbox subprocess failed"

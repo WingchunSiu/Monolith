@@ -13,6 +13,7 @@ import sys
 
 from dotenv import load_dotenv
 
+
 def _debug(message: str) -> None:
     sys.stderr.write(f"[sub_rlm_worker] {message}\n")
     sys.stderr.flush()
@@ -35,17 +36,29 @@ def main() -> int:
         _debug(f"has_/root/rlm-app/rlm={os.path.exists('/root/rlm-app/rlm')}")
 
         payload = _read_payload()
+        _debug(f"payload_keys={sorted(payload.keys())}")
+        _debug(f"payload_json_preview={json.dumps(payload, ensure_ascii=False)}")
+
         env_file_path = payload.get("env_file_path")
         if env_file_path:
             load_dotenv(env_file_path, override=True)
 
         prompt = payload.get("prompt")
         model = payload.get("model", "gpt-5")
+        _debug(f"model={model}")
+        _debug(f"prompt_type={type(prompt).__name__}")
+        if isinstance(prompt, str):
+            _debug(f"prompt_len={len(prompt)}")
+            _debug(f"prompt_preview={prompt}")
+        else:
+            _debug(f"prompt_repr_preview={repr(prompt)}")
 
         from rlm.utils.llm import OpenAIClient
 
         client = OpenAIClient(model=model)
         response = client.completion(messages=prompt, timeout=300)
+        _debug(f"response_len={len(response or '')}")
+        _debug(f"response_preview={response or ''}")
         sys.stdout.write(response or "")
         return 0
     except Exception as exc:

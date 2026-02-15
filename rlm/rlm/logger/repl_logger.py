@@ -16,7 +16,7 @@ class CodeExecution:
     execution_time: Optional[float] = None
 
 class REPLEnvLogger:
-    def __init__(self, max_output_length: int = 2000, enabled: bool = True):
+    def __init__(self, max_output_length: Optional[int] = None, enabled: bool = True):
         self.enabled = enabled
         self.console = Console()
         self.executions: List[CodeExecution] = []
@@ -24,7 +24,9 @@ class REPLEnvLogger:
         self.max_output_length = max_output_length
     
     def _truncate_output(self, text: str) -> str:
-        """Truncate text output to prevent overwhelming console output."""
+        """Return text unchanged unless a max output length is explicitly configured."""
+        if self.max_output_length is None or self.max_output_length <= 0:
+            return text
         if len(text) <= self.max_output_length:
             return text
         

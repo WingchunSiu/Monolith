@@ -85,11 +85,7 @@ class ColorfulLogger:
         for i, msg in enumerate(messages):
             role = msg.get('role', 'unknown')
             content = msg.get('content', '')
-            
-            # Truncate very long content for readability
-            if len(content) > 2000:
-                content = content[:2000] + "..."
-            
+
             role_color = "BLUE" if role == "user" else "MAGENTA" if role == "assistant" else "YELLOW"
             print(f"  {self._colorize(f'[{i+1}] {role.upper()}:', role_color)} {content}")
         
@@ -104,13 +100,8 @@ class ColorfulLogger:
         self.conversation_step += 1
         
         print(self._colorize(f"MODEL RESPONSE (Step {self.conversation_step}):", "BOLD"))
-        
-        # Truncate very long responses for readability
-        display_response = response
-        if len(response) > 500:
-            display_response = response[:500] + "..."
-        
-        print(f"  {self._colorize('Response:', 'CYAN')} {display_response}")
+
+        print(f"  {self._colorize('Response:', 'CYAN')} {response}")
         
         if has_tool_calls:
             print(self._colorize("  Contains tool calls - will execute them", "YELLOW"))
@@ -126,13 +117,8 @@ class ColorfulLogger:
             
         print(self._colorize("TOOL EXECUTION:", "BOLD"))
         print(f"  {self._colorize('Call:', 'YELLOW')} {tool_call_str}")
-        
-        # Truncate very long results for readability
-        display_result = tool_result
-        if len(tool_result) > 300:
-            display_result = tool_result[:300] + "..."
-        
-        print(f"  {self._colorize('Result:', 'GREEN')} {display_result}")
+
+        print(f"  {self._colorize('Result:', 'GREEN')} {tool_result}")
         print()
     
     def log_final_response(self, response: str):

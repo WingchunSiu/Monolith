@@ -73,8 +73,8 @@ def format_execution_result(
     stdout: str,
     stderr: str,
     locals_dict: Dict[str, Any],
-    truncate_length: int = 100,
-    max_output_chars: int = 4000,
+    truncate_length: Optional[int] = None,
+    max_output_chars: Optional[int] = None,
 ) -> str:
     """
     Format the execution result as a string for display.
@@ -88,15 +88,15 @@ def format_execution_result(
     result_parts = []
     
     if stdout:
-        if len(stdout) > max_output_chars:
+        if max_output_chars is not None and max_output_chars > 0 and len(stdout) > max_output_chars:
             stdout = stdout[:max_output_chars] + f"\n...[TRUNCATED {len(stdout) - max_output_chars} chars]"
         result_parts.append(f"\n{stdout}")
-    
+
     if stderr:
-        if len(stderr) > max_output_chars:
+        if max_output_chars is not None and max_output_chars > 0 and len(stderr) > max_output_chars:
             stderr = stderr[:max_output_chars] + f"\n...[TRUNCATED {len(stderr) - max_output_chars} chars]"
         result_parts.append(f"\n{stderr}")
-    
+
     # Show some key variables (excluding internal ones)
     important_vars = {}
     for key, value in locals_dict.items():
@@ -104,16 +104,16 @@ def format_execution_result(
             try:
                 # Only show simple types or short representations
                 if isinstance(value, (str, int, float, bool, list, dict, tuple)):
-                    if isinstance(value, str) and len(value) > truncate_length:
+                    if isinstance(value, str) and truncate_length and len(value) > truncate_length:
                         important_vars[key] = f"'{value[:truncate_length]}...'"
                     else:
                         important_vars[key] = repr(value)
             except:
                 important_vars[key] = f"<{type(value).__name__}>"
-    
+
     if important_vars:
         result_parts.append(f"REPL variables: {list(important_vars.keys())}\n")
-    
+
     return "\n\n".join(result_parts) if result_parts else "No output"
 
 
