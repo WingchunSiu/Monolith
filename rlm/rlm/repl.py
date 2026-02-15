@@ -111,14 +111,13 @@ class ModalSandboxSubRLM(RLM):
                 "workdir": self.sandbox_workdir,
                 "timeout": self.timeout + 30,
                 "env": {"PYTHONPATH": self.sandbox_workdir or "/root/rlm-app"},
-                "verbose": True
             }
             if self.sandbox_image_id:
                 create_kwargs["image"] = modal.Image.from_id(self.sandbox_image_id)
             elif self.sandbox_image is not None:
                 create_kwargs["image"] = self.sandbox_image
 
-            sandbox = modal.Sandbox.create(**create_kwargs)
+            sandbox = modal.Sandbox.create(**create_kwargs, verbose=True)
             # Preflight for debugging import-path issues inside the sandbox.
             try:
                 preflight = sandbox.exec(
@@ -169,31 +168,31 @@ class ModalSandboxSubRLM(RLM):
                 "env_file_path": self.env_file_path,
             }
             stdin_text = json.dumps(payload, ensure_ascii=False)
-            try:
-                process.stdin.write(stdin_text.encode("utf-8"))
-                process.stdin.write_eof()
-                process.stdin.drain()
-            except Exception as write_exc:
-                stderr = ""
-                try:
-                    process.wait()
-                except Exception:
-                    pass
-                try:
-                    stderr = process.stderr.read()
-                    if isinstance(stderr, bytes):
-                        stderr = stderr.decode("utf-8", errors="replace")
-                except Exception:
-                    stderr = ""
+            # try:
+            process.stdin.write(stdin_text.encode("utf-8"))
+            process.stdin.write_eof()
+            process.stdin.drain()
+            # except Exception as write_exc:
+            #     stderr = ""
+            #     try:
+            #         process.wait()
+            #     except Exception:
+            #         pass
+            #     try:
+            #         stderr = process.stderr.read()
+            #         if isinstance(stderr, bytes):
+            #             stderr = stderr.decode("utf-8", errors="replace")
+            #     except Exception:
+            #         stderr = ""
 
-                details = str(write_exc)
-                if process.returncode is not None:
-                    details += f" (returncode={process.returncode})"
-                if stderr and stderr.strip():
-                    details += "; stderr: " + stderr.strip()
-                if sandbox_debug:
-                    details += "; sandbox_debug: " + sandbox_debug
-                return f"Error making LLM query in sandbox: {details}"
+            #     details = str(write_exc)
+            #     if process.returncode is not None:
+            #         details += f" (returncode={process.returncode})"
+            #     if stderr and stderr.strip():
+            #         details += "; stderr: " + stderr.strip()
+            #     if sandbox_debug:
+            #         details += "; sandbox_debug: " + sandbox_debug
+            #     return f"Error making LLM query in sandbox: {details}"
 
             stdout = process.stdout.read()
             stderr = process.stderr.read()
