@@ -1,71 +1,32 @@
-# MCP-Modal: Cloudflare Gateway + Modal Backend
+# mcp-modal — RLM on Modal with Cloudflare MCP Gateway
 
-RLM-as-MCP-tool with two deployment modes:
-- **Local (stdio)** — Python MCP server calls Modal directly
-- **Cloud (Cloudflare + Modal)** — Cloudflare Worker proxies MCP to Modal HTTP endpoints
-
-## Architecture
+Architecture:
 
 ```
-Claude Code
-  │
-  └─ MCP (streamable-http or stdio)
-      │
-      ▼
-Cloudflare Worker (/mcp)          ← thin JSON-RPC proxy (cloud mode)
-  │                                  OR
-  │                                Python server.py (local/stdio mode)
-  │
-  ├─ chat_rlm_query  ──→ Modal /query endpoint
-  │                       → reads context from Modal Volume
-  │                       → runs RLM
-  │                       → appends turn to volume
-  │                       → returns answer
-  │
-  └─ upload_context   ──→ Modal /upload endpoint
-                           → appends transcript to Modal Volume
+Claude Code → MCP (streamable-http) → Cloudflare Worker (/mcp)
+  ├─ chat_rlm_query → POST Modal /query_endpoint
+  │     Modal: reads context from volume, runs RLM, appends turn, returns answer
+  └─ upload_context → POST Modal /upload_endpoint
+        Modal: appends transcript to volume file
 ```
 
 ## Setup
 
-### Prerequisites
-
-- Python 3.12+
-- [Modal](https://modal.com) account + `modal token set`
-- OpenAI API key in a `.env` file on the Modal Volume (`/rlm-data/.env`)
-
-### 1. Install dependencies
+### 1. Deploy Modal backend
 
 ```bash
 cd mcp-modal
 pip install -r requirements.txt
-```
-
-### 2. Deploy Modal functions
-
-```bash
 modal deploy modal_runtime.py
 ```
 
-This creates:
-- `run_rlm_remote` — callable via `.remote()` from Python
-- `store_context` — callable via `.remote()` from Python
-- `query_endpoint` — HTTP POST endpoint for Cloudflare Worker
-- `upload_endpoint` — HTTP POST endpoint for Cloudflare Worker
-
-### 3a. Local mode (stdio)
-
-Add the MCP server to Claude Code:
+### 2. Upload .env to Modal volume
 
 ```bash
-claude mcp add deeprecurse --transport stdio -- python /path/to/mcp-modal/server.py
+modal volume put rlm-shared-volume .env .env
 ```
 
-### 3b. Cloud mode (Cloudflare + Modal)
-
-1. Update `MODAL_BACKEND_URL` in `cloudflare/worker-gateway/wrangler.toml` with your Modal endpoint URL (found after `modal deploy`).
-
-2. Deploy the Cloudflare Worker:
+### 3. Deploy Cloudflare Worker (optional — for remote MCP)
 
 ```bash
 cd cloudflare/worker-gateway
@@ -73,49 +34,72 @@ npm install
 npm run deploy
 ```
 
-3. Add the MCP server to Claude Code:
+Update `MODAL_BACKEND_URL` in `wrangler.toml` if your Modal URL differs.
 
-```bash
-claude mcp add deeprecurse --transport http --url https://deeprecurse-mcp-modal.<your-subdomain>.workers.dev/mcp
-```
+### 4. Configure Claude Code
 
-## MCP Tools
-
-### `chat_rlm_query`
-Query the RLM with persistent thread context.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `query` | string | yes | The question to ask |
-| `thread_id` | string | yes | Thread identifier for context persistence |
-
-### `upload_context`
-Upload a session transcript for RLM context.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `transcript` | string | yes | Full transcript text |
-| `session_id` | string | yes | Session identifier |
-| `thread_id` | string | no | Thread to store under (default: `transcripts`) |
-
-## SessionEnd Hook
-
-Auto-upload transcripts when a Claude Code session ends:
+**Option A: Remote MCP via Cloudflare Worker**
 
 ```json
 {
-  "hooks": {
-    "SessionEnd": [{
-      "command": "/path/to/mcp-modal/scripts/session_end_upload.sh"
-    }]
+  "mcpServers": {
+    "deeprecurse": {
+      "url": "https://deeprecurse-mcp-gateway.<your-subdomain>.workers.dev/mcp"
+    }
   }
 }
 ```
 
-## Volume Layout
+**Option B: Local MCP via stdio (calls Modal .remote() directly)**
 
+```json
+{
+  "mcpServers": {
+    "deeprecurse": {
+      "command": "python",
+      "args": ["mcp-modal/server.py"]
+    }
+  }
+}
 ```
-/rlm-data/
-  .env                          ← OpenAI API key
-  {thread_id}/context.txt       ← accumulated context per thread
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `chat_rlm_query` | Query RLM with persistent thread context |
+| `upload_context` | Upload session transcript to shared volume |
+
+## Testing
+
+```bash
+# Deploy
+cd mcp-modal && modal deploy modal_runtime.py
+
+# Test upload
+curl -s -X POST https://dmku33--rlm-repl-upload-endpoint.modal.run \
+  -H 'Content-Type: application/json' \
+  -d '{"transcript":"test content","session_id":"test-001","thread_id":"test-thread"}'
+
+# Verify on volume
+modal volume ls rlm-shared-volume /test-thread/
+
+# Test query
+curl -s -X POST https://dmku33--rlm-repl-query-endpoint.modal.run \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"Summarize the context.","thread_id":"test-thread"}'
+```
+
+## Session End Hook
+
+Auto-upload transcripts when Claude Code sessions end:
+
+```json
+{
+  "hooks": {
+    "SessionEnd": [
+      { "command": "/path/to/mcp-modal/scripts/session_end_upload.sh" }
+    ]
+  }
+}
 ```

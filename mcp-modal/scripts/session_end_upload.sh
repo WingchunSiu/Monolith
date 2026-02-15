@@ -1,76 +1,41 @@
 #!/usr/bin/env bash
-# SessionEnd hook — uploads the session transcript to Modal Volume.
+# session_end_upload.sh — Claude Code SessionEnd hook
+# Uploads the current session transcript to the Modal backend.
 #
-# Hook config (in .claude/settings.json):
+# Claude Code hook config (~/.claude/settings.json):
 #   "hooks": {
-#     "SessionEnd": [{
-#       "command": "/path/to/mcp-modal/scripts/session_end_upload.sh"
-#     }]
+#     "SessionEnd": [
+#       { "command": "/path/to/mcp-modal/scripts/session_end_upload.sh" }
+#     ]
 #   }
-#
-# Environment variables set by Claude Code:
-#   SESSION_ID    — unique session identifier
-#   PROJECT_DIR   — project directory path
-#   TRANSCRIPT    — path to session transcript JSONL file
-#
-# The script reads the JSONL transcript, extracts user/assistant messages,
-# and uploads them to the Modal Volume via the store_context Modal function.
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MCP_MODAL_DIR="$(dirname "$SCRIPT_DIR")"
+MODAL_UPLOAD_URL="${MODAL_UPLOAD_URL:-https://dmku33--rlm-repl-upload-endpoint.modal.run}"
+THREAD_ID="${THREAD_ID:-transcripts}"
+DEVELOPER="${DEVELOPER:-$(whoami)}"
+SESSION_ID="$(date +%Y%m%dT%H%M%S)-$$"
 
-# Derive thread_id from project directory name
-THREAD_ID="${PROJECT_DIR##*/}"
-if [ -z "$THREAD_ID" ]; then
-  THREAD_ID="default"
-fi
+# Claude Code pipes the session transcript to the hook's stdin.
+# Write to a temp file to avoid shell escaping issues with large transcripts.
+TMPFILE="$(mktemp)"
+trap 'rm -f "$TMPFILE"' EXIT
 
-# Check required env vars
-if [ -z "${SESSION_ID:-}" ]; then
-  echo "SESSION_ID not set, skipping upload." >&2
-  exit 0
-fi
+cat > "$TMPFILE"
 
-if [ -z "${TRANSCRIPT:-}" ] || [ ! -f "$TRANSCRIPT" ]; then
-  echo "TRANSCRIPT file not found, skipping upload." >&2
-  exit 0
-fi
-
-# Extract human-readable messages from JSONL
-TRANSCRIPT_TEXT=$(python3 -c "
+# Build JSON payload safely using Python (handles escaping correctly)
+PAYLOAD="$(python3 -c "
 import json, sys
-lines = []
-for line in open(sys.argv[1]):
-    try:
-        obj = json.loads(line)
-    except json.JSONDecodeError:
-        continue
-    role = obj.get('role', '')
-    content = obj.get('content', '')
-    if isinstance(content, list):
-        content = ' '.join(
-            c.get('text', '') for c in content if isinstance(c, dict) and c.get('type') == 'text'
-        )
-    if role and content.strip():
-        lines.append(f'{role.upper()}: {content.strip()}')
-print('\n'.join(lines))
-" "$TRANSCRIPT" 2>/dev/null || echo "")
+transcript = open(sys.argv[1]).read()
+print(json.dumps({
+    'transcript': transcript,
+    'session_id': sys.argv[2],
+    'thread_id': sys.argv[3],
+    'developer': sys.argv[4],
+}))
+" "$TMPFILE" "$SESSION_ID" "$THREAD_ID" "$DEVELOPER")"
 
-if [ -z "$TRANSCRIPT_TEXT" ]; then
-  echo "No transcript content to upload." >&2
-  exit 0
-fi
-
-# Upload via Modal store_context function
-cd "$MCP_MODAL_DIR"
-python3 -c "
-from modal_runtime import store_context
-result = store_context.remote(
-    thread_id='$THREAD_ID',
-    session_id='$SESSION_ID',
-    transcript='''$TRANSCRIPT_TEXT''',
-)
-print(f'Uploaded: {result}')
-" 2>&1 || echo "Upload failed (non-fatal)." >&2
+curl -sf -X POST "$MODAL_UPLOAD_URL" \
+  -H 'Content-Type: application/json' \
+  -d "$PAYLOAD" \
+  > /dev/null 2>&1 || echo "Warning: session upload failed" >&2

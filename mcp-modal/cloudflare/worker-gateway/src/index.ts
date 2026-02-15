@@ -1,5 +1,6 @@
-// Streamable-HTTP MCP gateway — thin proxy to Modal web endpoints.
-// No Durable Objects, no local storage. All state lives on the Modal Volume.
+// src/index.ts
+// Streamable-HTTP MCP gateway that proxies tool calls to Modal backend.
+// No Durable Objects — all state lives on Modal's shared volume.
 
 export interface Env {
   MODAL_BACKEND_URL: string;
@@ -21,6 +22,7 @@ interface ToolCallParams {
     thread_id?: string;
     transcript?: string;
     session_id?: string;
+    developer?: string;
   };
 }
 
@@ -35,6 +37,7 @@ function streamableResponse(request: Request, payload: unknown, status = 200): R
   if (!wantsSse(request)) {
     return Response.json(payload, { status });
   }
+
   const sse = `event: message\ndata: ${JSON.stringify(payload)}\n\n`;
   return new Response(sse, {
     status,
@@ -55,24 +58,26 @@ function jsonRpcError(request: Request, id: JsonRpcId, code: number, message: st
   return streamableResponse(request, { jsonrpc: "2.0", id, error: { code, message } });
 }
 
-/* ----------------------- Tool call proxy ----------------------- */
+/* ----------------------- Modal proxy ----------------------- */
 
 async function proxyToModal(
   env: Env,
   endpoint: string,
   body: Record<string, unknown>,
-): Promise<unknown> {
-  const url = `${env.MODAL_BACKEND_URL.replace(/\/+$/, "")}/${endpoint}`;
+): Promise<Record<string, unknown>> {
+  const url = `${env.MODAL_BACKEND_URL.replace(/\/$/, "")}/${endpoint}`;
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+
   if (!resp.ok) {
     const detail = await resp.text();
     throw new Error(`Modal ${endpoint} error (${resp.status}): ${detail.slice(0, 400)}`);
   }
-  return resp.json();
+
+  return (await resp.json()) as Record<string, unknown>;
 }
 
 /* ----------------------- MCP handler ----------------------- */
@@ -91,7 +96,7 @@ async function handleOneRpc(request: Request, env: Env, rpc: JsonRpcRequest): Pr
     return jsonRpcResult(request, id, {
       protocolVersion: "2024-11-05",
       capabilities: { tools: {} },
-      serverInfo: { name: "deeprecurse-mcp-modal", version: "0.1.0" },
+      serverInfo: { name: "deeprecurse-worker-mcp", version: "0.2.0" },
     });
   }
 
@@ -128,6 +133,7 @@ async function handleOneRpc(request: Request, env: Env, rpc: JsonRpcRequest): Pr
               transcript: { type: "string", description: "The full session transcript text to upload." },
               session_id: { type: "string", description: "Session identifier." },
               thread_id: { type: "string", description: "Thread to store the transcript under (default: 'transcripts')." },
+              developer: { type: "string", description: "Developer name/identifier." },
             },
             required: ["transcript", "session_id"],
           },
@@ -145,14 +151,27 @@ async function handleOneRpc(request: Request, env: Env, rpc: JsonRpcRequest): Pr
       if (!query || !threadId) {
         return jsonRpcError(request, id, -32602, "query and thread_id are required");
       }
+
       try {
-        const data = (await proxyToModal(env, "query_endpoint", { query, thread_id: threadId })) as {
-          answer?: string;
-        };
-        const answer = data.answer ?? JSON.stringify(data);
-        return jsonRpcResult(request, id, { content: [{ type: "text", text: answer }] });
+        const data = await proxyToModal(env, "query_endpoint", {
+          query,
+          thread_id: threadId,
+        });
+
+        if (data.error) {
+          return jsonRpcError(request, id, -32000, String(data.error));
+        }
+
+        return jsonRpcResult(request, id, {
+          content: [{ type: "text", text: String(data.answer ?? "") }],
+        });
       } catch (err) {
-        return jsonRpcError(request, id, -32000, err instanceof Error ? err.message : "Unknown error");
+        return jsonRpcError(
+          request,
+          id,
+          -32000,
+          err instanceof Error ? err.message : "Unknown internal error",
+        );
       }
     }
 
@@ -160,19 +179,35 @@ async function handleOneRpc(request: Request, env: Env, rpc: JsonRpcRequest): Pr
       const transcript = params.arguments?.transcript?.trim();
       const sessionId = params.arguments?.session_id?.trim();
       const threadId = params.arguments?.thread_id?.trim() || "transcripts";
+      const developer = params.arguments?.developer || "unknown";
+
       if (!transcript || !sessionId) {
         return jsonRpcError(request, id, -32602, "transcript and session_id are required");
       }
+
       try {
-        await proxyToModal(env, "upload_endpoint", {
+        const data = await proxyToModal(env, "upload_endpoint", {
           transcript,
           session_id: sessionId,
           thread_id: threadId,
+          developer,
         });
-        const msg = `Uploaded session ${sessionId} to thread '${threadId}'.`;
-        return jsonRpcResult(request, id, { content: [{ type: "text", text: msg }] });
+
+        if (data.error) {
+          return jsonRpcError(request, id, -32000, String(data.error));
+        }
+
+        const msg = data.message || `Uploaded session ${sessionId} to thread '${threadId}'.`;
+        return jsonRpcResult(request, id, {
+          content: [{ type: "text", text: String(msg) }],
+        });
       } catch (err) {
-        return jsonRpcError(request, id, -32000, err instanceof Error ? err.message : "Unknown error");
+        return jsonRpcError(
+          request,
+          id,
+          -32000,
+          err instanceof Error ? err.message : "Unknown internal error",
+        );
       }
     }
 
@@ -207,7 +242,12 @@ async function handleMcp(request: Request, env: Env): Promise<Response> {
     const responses: unknown[] = [];
     for (const item of body) {
       if (typeof item !== "object" || item === null) continue;
-      const resp = await handleOneRpc(request, env, item as JsonRpcRequest);
+      const rpc = item as JsonRpcRequest;
+      const resp = await handleOneRpc(
+        new Request(request, { headers: { ...Object.fromEntries(request.headers) } }),
+        env,
+        rpc,
+      );
       const json = await resp.json().catch(() => null);
       if (json) responses.push(json);
     }
@@ -220,8 +260,10 @@ async function handleMcp(request: Request, env: Env): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
     if (url.pathname === "/healthz") return new Response("ok", { status: 200 });
     if (url.pathname === "/mcp") return handleMcp(request, env);
+
     return new Response("Not Found", { status: 404 });
   },
 };

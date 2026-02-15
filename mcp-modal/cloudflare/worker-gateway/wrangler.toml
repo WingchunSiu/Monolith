@@ -1,4 +1,4 @@
-name = "deeprecurse-mcp-modal"
+name = "deeprecurse-mcp-gateway"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
@@ -6,4 +6,4 @@ compatibility_date = "2025-01-01"
 enabled = true
 
 [vars]
-MODAL_BACKEND_URL = "https://YOUR_MODAL_USERNAME--rlm-repl.modal.run"
+MODAL_BACKEND_URL = "https://dmku33--rlm-repl"

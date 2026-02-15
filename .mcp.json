@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "deeprecurse": {
+      "command": "python",
+      "args": ["/Users/dmytro/Desktop/Gits/rlm-explorations/mcp-modal/server.py"]
+    }
+  }
+}

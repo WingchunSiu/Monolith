@@ -1,27 +1,28 @@
-"""Modal runtime with HTTP endpoints for RLM execution and context storage.
-
-Exposes two web endpoints:
-  POST /query   — run RLM against thread context on the volume
-  POST /upload  — append transcript text to thread context on the volume
-
-Deploy:
-  modal deploy modal_runtime.py
-"""
+"""Modal runtime for RLM — exposes FastAPI endpoints for Cloudflare Worker gateway."""
 
 from __future__ import annotations
 
 import os
 import sys
+import json
+from datetime import datetime, timezone
 
 import modal
-from dotenv import load_dotenv
+from pydantic import BaseModel
+from typing import Optional
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 MODAL_APP_NAME = "rlm-repl"
 MODAL_VOLUME_NAME = "rlm-shared-volume"
 MOUNT_PATH = "/rlm-data"
 SOURCE_PATH_IN_IMAGE = "/root/rlm-app"
 ENV_RELATIVE_PATH = ".env"
 
+# ---------------------------------------------------------------------------
+# Modal resources
+# ---------------------------------------------------------------------------
 app = modal.App(MODAL_APP_NAME)
 
 image = (
@@ -32,58 +33,70 @@ image = (
 
 shared_volume = modal.Volume.from_name(MODAL_VOLUME_NAME, create_if_missing=True)
 
+# ---------------------------------------------------------------------------
+# Request / response models
+# ---------------------------------------------------------------------------
+
+class QueryRequest(BaseModel):
+    query: str
+    thread_id: str
+    model: str = "gpt-5"
+    recursive_model: str = "gpt-5-nano"
+    max_iterations: int = 10
+
+
+class UploadRequest(BaseModel):
+    transcript: str
+    session_id: str
+    thread_id: str = "transcripts"
+    developer: Optional[str] = None
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _load_env() -> None:
+    """Load .env from the shared volume if present."""
+    from dotenv import load_dotenv
+
     env_path = os.path.join(MOUNT_PATH, ENV_RELATIVE_PATH)
     if os.path.exists(env_path):
         load_dotenv(env_path, override=True)
 
 
-def _read_volume_file(relpath: str) -> str:
-    """Read a text file from the volume, returning '' if missing."""
-    full = os.path.join(MOUNT_PATH, relpath)
-    if not os.path.exists(full):
-        return ""
-    with open(full, "r", encoding="utf-8") as f:
-        return f.read()
+def _ensure_context_file(thread_id: str) -> str:
+    """Return the absolute path of the context file for *thread_id*, creating it if needed."""
+    thread_dir = os.path.join(MOUNT_PATH, thread_id)
+    os.makedirs(thread_dir, exist_ok=True)
+    context_path = os.path.join(thread_dir, "context.txt")
+    if not os.path.exists(context_path):
+        with open(context_path, "w") as f:
+            f.write("")
+    return context_path
 
 
-def _append_to_volume(relpath: str, text: str) -> None:
-    """Append text to a file on the volume (creating dirs as needed)."""
-    full = os.path.join(MOUNT_PATH, relpath)
-    os.makedirs(os.path.dirname(full), exist_ok=True)
-    with open(full, "a", encoding="utf-8") as f:
+def _append_to_volume(thread_id: str, text: str) -> str:
+    """Append *text* to the context file and commit the volume. Returns the file path."""
+    context_path = _ensure_context_file(thread_id)
+    with open(context_path, "a") as f:
         f.write(text)
     shared_volume.commit()
+    return context_path
 
 
-def _ensure_context_file(relpath: str) -> str:
-    """Ensure context file exists on the volume, return its absolute path."""
-    full = os.path.join(MOUNT_PATH, relpath)
-    os.makedirs(os.path.dirname(full), exist_ok=True)
-    if not os.path.exists(full):
-        with open(full, "w", encoding="utf-8") as f:
-            f.write("")
-        shared_volume.commit()
-    return full
-
-
-def _run_rlm(query: str, context_relpath: str) -> str:
-    """Run RLM_REPL with context from the volume."""
+def _run_rlm(query: str, thread_id: str, model: str, recursive_model: str, max_iterations: int) -> str:
+    """Run RLM_REPL against the context file for *thread_id*."""
     sys.path.insert(0, SOURCE_PATH_IN_IMAGE)
     from rlm.rlm_repl import RLM_REPL
 
     _load_env()
-    context_path = _ensure_context_file(context_relpath)
+    context_path = _ensure_context_file(thread_id)
 
     rlm = RLM_REPL(
-        model="gpt-5",
-        recursive_model="gpt-5-nano",
-        max_iterations=10,
+        model=model,
+        recursive_model=recursive_model,
+        max_iterations=max_iterations,
         enable_logging=True,
         sub_rlm_mode="local",
     )
@@ -91,7 +104,7 @@ def _run_rlm(query: str, context_relpath: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Modal function (callable via .remote() from Python)
+# Modal function (for direct .remote() calls from local server.py)
 # ---------------------------------------------------------------------------
 
 @app.function(
@@ -111,7 +124,12 @@ def run_rlm_remote(
     from rlm.rlm_repl import RLM_REPL
 
     _load_env()
-    context_path = _ensure_context_file(context_relpath)
+    shared_volume.reload()
+
+    normalized_relpath = context_relpath.lstrip("/")
+    # Extract thread_id from relpath (e.g. "my-thread/context.txt" -> "my-thread")
+    thread_id = normalized_relpath.split("/")[0] if "/" in normalized_relpath else normalized_relpath
+    context_path = _ensure_context_file(thread_id)
 
     rlm = RLM_REPL(
         model=model,
@@ -126,17 +144,16 @@ def run_rlm_remote(
 @app.function(
     image=image,
     volumes={MOUNT_PATH: shared_volume},
+    timeout=60,
 )
-def store_context(thread_id: str, session_id: str, transcript: str) -> dict:
-    """Append transcript text to a thread's context file on the volume."""
-    relpath = f"{thread_id}/context.txt"
-    header = f"\n[SESSION {session_id}]\n"
-    _append_to_volume(relpath, header + transcript + "\n")
-    return {"status": "ok", "thread_id": thread_id, "session_id": session_id}
+def store_context(thread_id: str, text: str) -> str:
+    """Append *text* to the context file for *thread_id*. Returns confirmation."""
+    path = _append_to_volume(thread_id, text)
+    return f"Stored to {path}"
 
 
 # ---------------------------------------------------------------------------
-# Web endpoints (called by Cloudflare Worker via HTTP)
+# FastAPI endpoints (called by Cloudflare Worker)
 # ---------------------------------------------------------------------------
 
 @app.function(
@@ -145,31 +162,50 @@ def store_context(thread_id: str, session_id: str, transcript: str) -> dict:
     timeout=3600,
 )
 @modal.fastapi_endpoint(method="POST")
-def query_endpoint(item: dict) -> dict:
-    """HTTP endpoint for Cloudflare Worker to call for RLM queries."""
-    query = item["query"]
-    thread_id = item["thread_id"]
-    context_relpath = f"{thread_id}/context.txt"
+def query_endpoint(req: QueryRequest):
+    """POST /query_endpoint — Run RLM against thread context, append turn, return answer."""
+    try:
+        # Reload volume to see latest writes
+        shared_volume.reload()
 
-    answer = _run_rlm(query, context_relpath)
+        answer = _run_rlm(
+            query=req.query,
+            thread_id=req.thread_id,
+            model=req.model,
+            recursive_model=req.recursive_model,
+            max_iterations=req.max_iterations,
+        )
 
-    _append_to_volume(context_relpath, f"\nUSER: {query}\nASSISTANT: {answer}\n")
+        # Append the turn to context
+        turn_text = f"\nUSER: {req.query}\nASSISTANT: {answer}\n"
+        _append_to_volume(req.thread_id, turn_text)
 
-    return {"answer": answer}
+        return {"answer": answer}
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 @app.function(
     image=image,
     volumes={MOUNT_PATH: shared_volume},
+    timeout=120,
 )
 @modal.fastapi_endpoint(method="POST")
-def upload_endpoint(item: dict) -> dict:
-    """HTTP endpoint for transcript upload."""
-    transcript = item["transcript"]
-    thread_id = item.get("thread_id", "transcripts")
-    session_id = item["session_id"]
+def upload_endpoint(req: UploadRequest):
+    """POST /upload_endpoint — Store a session transcript on the shared volume."""
+    try:
+        shared_volume.reload()
 
-    relpath = f"{thread_id}/context.txt"
-    _append_to_volume(relpath, f"\n[SESSION {session_id}]\n{transcript}\n")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        developer = req.developer or "unknown"
+        header = f"\n[SESSION UPLOAD] {req.session_id} | developer={developer} | {timestamp}\n"
+        text = header + req.transcript + "\n"
 
-    return {"status": "ok", "thread_id": thread_id, "session_id": session_id}
+        path = _append_to_volume(req.thread_id, text)
+        return {
+            "ok": True,
+            "message": f"Uploaded session {req.session_id} to {req.thread_id}",
+            "path": path,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
