@@ -38,24 +38,48 @@ if [ -z "${TRANSCRIPT:-}" ] || [ ! -f "$TRANSCRIPT" ]; then
   exit 0
 fi
 
-# Extract human-readable messages from JSONL
+# Extract clean user/assistant conversation from JSONL (no tool use, no system noise)
 TRANSCRIPT_TEXT=$(python3 -c "
-import json, sys
-lines = []
+import json, sys, re
+
+SYSTEM_TAGS = re.compile(
+    r'<(?:local-command-caveat|local-command-stdout|command-name'
+    r'|command-message|command-args|system-reminder)[>\s]',
+    re.IGNORECASE,
+)
+
+turns = []
 for line in open(sys.argv[1]):
     try:
-        obj = json.loads(line)
+        entry = json.loads(line)
     except json.JSONDecodeError:
         continue
-    role = obj.get('role', '')
-    content = obj.get('content', '')
+
+    entry_type = entry.get('type', '')
+    if entry_type not in ('user', 'assistant'):
+        continue
+
+    msg = entry.get('message', {})
+    content = msg.get('content', '')
+
     if isinstance(content, list):
-        content = ' '.join(
-            c.get('text', '') for c in content if isinstance(c, dict) and c.get('type') == 'text'
+        content = '\n'.join(
+            (c if isinstance(c, str) else c.get('text', ''))
+            for c in content
+            if isinstance(c, str) or (isinstance(c, dict) and c.get('type') == 'text')
         )
-    if role and content.strip():
-        lines.append(f'{role.upper()}: {content.strip()}')
-print('\n'.join(lines))
+
+    content = content.strip()
+    if not content:
+        continue
+
+    if SYSTEM_TAGS.search(content):
+        continue
+
+    role = msg.get('role', entry_type).upper()
+    turns.append(f'[{role}]\n{content}')
+
+print('\n\n---\n\n'.join(turns))
 " "$TRANSCRIPT" 2>/dev/null || echo "")
 
 if [ -z "$TRANSCRIPT_TEXT" ]; then

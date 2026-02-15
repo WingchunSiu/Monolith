@@ -8,17 +8,10 @@ Usage:
 
 from __future__ import annotations
 
-import json
-import os
-import sys
-from pathlib import Path
-
+import modal
 from mcp.server.fastmcp import FastMCP
 
-# Ensure we can import modal_runtime from this directory
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from modal_runtime import run_rlm_remote, store_context
+MODAL_APP_NAME = "rlm-repl"
 
 mcp = FastMCP("deeprecurse-chat-rlm")
 
@@ -34,6 +27,7 @@ def chat_rlm_query(query: str, thread_id: str) -> str:
     context_relpath = f"{thread_id}/context.txt"
 
     try:
+        run_rlm_remote = modal.Function.from_name(MODAL_APP_NAME, "run_rlm_remote")
         answer = run_rlm_remote.remote(query=clean_query, context_relpath=context_relpath)
     except Exception as exc:
         return f"Error running RLM: {exc}"
@@ -55,7 +49,8 @@ def upload_context(
         return "Error: session_id cannot be empty."
 
     try:
-        result = store_context.remote(
+        store_context_fn = modal.Function.from_name(MODAL_APP_NAME, "store_context")
+        store_context_fn.remote(
             thread_id=thread_id,
             session_id=session_id,
             transcript=transcript,
